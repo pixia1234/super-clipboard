@@ -1,0 +1,13 @@
+name: super-clipboard
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - fastapi==0.119.0
+      - uvicorn[standard]==0.37.0
+      - pydantic==2.12.1
+      - pydantic-settings==2.6.1
+      - pytest==8.3.3
+      - httpx==0.27.2

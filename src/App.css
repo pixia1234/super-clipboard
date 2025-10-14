@@ -204,6 +204,12 @@
   color: #94a3b8;
 }
 
+.field__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .field--horizontal {
   flex-direction: column;
 }

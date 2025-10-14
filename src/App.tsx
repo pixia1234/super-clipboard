@@ -2,7 +2,6 @@ import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import {
   useClipboardStore,
   ClipType,
-  StoredFile,
   RemoteClip
 } from "./store/useClipboardStore";
 import { readFromClipboard, writeToClipboard } from "./utils/clipboard";
@@ -12,6 +11,12 @@ import {
   hoursToMilliseconds,
   formatBytes
 } from "./utils/generators";
+import {
+  listRemoteClips,
+  createRemoteClip,
+  deleteRemoteClip,
+  fetchRemoteClip
+} from "./utils/api";
 import "./App.css";
 
 const buildRelativeAccessPath = (accessCode: string): string => {
@@ -31,13 +36,21 @@ type ToastState = {
   message: string;
 };
 
-const REMOTE_STORAGE_KEY = "super-clipboard::remote";
 const SETTINGS_STORAGE_KEY = "super-clipboard::settings";
 const MIN_EXPIRY_HOURS = 1;
 const MAX_EXPIRY_HOURS = 120;
 const DEFAULT_EXPIRY_HOURS = 24;
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50MB
 const TOKEN_EXPIRY_MS = 720 * 60 * 60 * 1000; // 720 小时
+const DEFAULT_MAX_DOWNLOADS = 10;
+const MAX_DOWNLOADS_OPTIONS = [3, 5, 10, 20, 50, 100];
+
+type DraftFile = {
+  name: string;
+  size: number;
+  type: string;
+  dataUrl: string;
+};
 
 const emptyToast: ToastState | null = null;
 
@@ -100,23 +113,25 @@ const clipTitle = (clip: RemoteClip): string => {
 const App = () => {
   const {
     remoteClips,
-    addRemoteClip,
-    removeRemoteClip,
-    replaceRemoteClips,
-    incrementDownloadCount,
+    setRemoteClips,
+    upsertRemoteClip,
+    updateRemoteClip,
+    removeRemoteClip: removeClipFromStore,
     settings,
     updateSettings
   } = useClipboardStore();
 
   const [type, setType] = useState<ClipType>("text");
   const [textContent, setTextContent] = useState("");
-  const [selectedFile, setSelectedFile] = useState<StoredFile | null>(null);
+  const [selectedFile, setSelectedFile] = useState<DraftFile | null>(null);
   const [expiresInHours, setExpiresInHours] = useState(DEFAULT_EXPIRY_HOURS);
+  const [maxDownloads, setMaxDownloads] = useState(DEFAULT_MAX_DOWNLOADS);
   const [shortCode, setShortCode] = useState(() => generateAccessCode());
   const [accessMode, setAccessMode] = useState<"code" | "token">(
     () => (settings.persistentToken ? "token" : "code")
   );
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isCreatingClip, setIsCreatingClip] = useState(false);
 
   const [toast, setToast] = useState<ToastState | null>(emptyToast);
   const [isImportingClipboard, setIsImportingClipboard] = useState(false);
@@ -126,18 +141,6 @@ const App = () => {
   );
 
   useEffect(() => {
-    try {
-      const rawRemote = window.localStorage.getItem(REMOTE_STORAGE_KEY);
-      if (rawRemote) {
-        const parsed = JSON.parse(rawRemote);
-        if (Array.isArray(parsed)) {
-          replaceRemoteClips(parsed);
-        }
-      }
-    } catch (error) {
-      console.warn("读取云端片段失败：", error);
-    }
-
     try {
       const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
       if (rawSettings) {
@@ -149,7 +152,8 @@ const App = () => {
           environmentId: unknown;
         }>;
         const sanitized = {
-          persistentToken: typeof parsed.persistentToken === "string" ? parsed.persistentToken : "",
+          persistentToken:
+            typeof parsed.persistentToken === "string" ? parsed.persistentToken : "",
           tokenUpdatedAt:
             typeof parsed.tokenUpdatedAt === "number" ? parsed.tokenUpdatedAt : null,
           tokenLastUsedAt:
@@ -169,8 +173,29 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem(REMOTE_STORAGE_KEY, JSON.stringify(remoteClips));
-  }, [remoteClips]);
+    let cancelled = false;
+
+    const loadRemoteClips = async () => {
+      try {
+        const clips = await listRemoteClips();
+        if (!cancelled) {
+          setRemoteClips(clips);
+        }
+      } catch (error) {
+        console.warn("获取云端片段失败：", error);
+        if (!cancelled) {
+          setToast({ kind: "error", message: "获取云端片段失败，请稍后重试" });
+        }
+      }
+    };
+
+    loadRemoteClips();
+    const timer = window.setInterval(loadRemoteClips, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [setRemoteClips]);
 
   useEffect(() => {
     window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
@@ -192,20 +217,6 @@ const App = () => {
     const timer = window.setInterval(() => setNow(Date.now()), 30000);
     return () => window.clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    if (!remoteClips.length) {
-      return;
-    }
-    const active = remoteClips.filter((clip) => clip.expiresAt > now);
-    if (active.length !== remoteClips.length) {
-      replaceRemoteClips(active);
-      setToast({
-        kind: "info",
-        message: `已自动销毁 ${remoteClips.length - active.length} 个云端片段`
-      });
-    }
-  }, [now, remoteClips, replaceRemoteClips]);
 
   useEffect(() => {
     if (!settings.persistentToken) {
@@ -244,7 +255,10 @@ const App = () => {
   }, [settings.persistentToken, accessMode]);
 
   const hasActiveClips = useMemo(
-    () => remoteClips.some((clip) => clip.expiresAt > now),
+    () =>
+      remoteClips.some(
+        (clip) => clip.expiresAt > now && clip.downloadCount < clip.maxDownloads
+      ),
     [remoteClips, now]
   );
 
@@ -252,6 +266,7 @@ const App = () => {
     setTextContent("");
     setSelectedFile(null);
     setExpiresInHours(DEFAULT_EXPIRY_HOURS);
+    setMaxDownloads(DEFAULT_MAX_DOWNLOADS);
     setShortCode(generateAccessCode());
     setType("text");
     if (!settings.persistentToken) {
@@ -311,7 +326,10 @@ const App = () => {
     }
   };
 
-  const handleCreateRemoteClip = () => {
+  const handleCreateRemoteClip = async () => {
+    if (isCreatingClip) {
+      return;
+    }
     const trimmedText = textContent.trim();
     if (type === "text" && !trimmedText) {
       setToast({
@@ -337,6 +355,14 @@ const App = () => {
       setToast({
         kind: "info",
         message: "自动销毁时间需在 1 到 120 小时之间"
+      });
+      return;
+    }
+
+    if (Number.isNaN(maxDownloads) || maxDownloads < 1 || maxDownloads > 500) {
+      setToast({
+        kind: "info",
+        message: "单个片段的访问次数需在 1 到 500 次之间"
       });
       return;
     }
@@ -399,32 +425,45 @@ const App = () => {
       }
     }
 
-    const created = addRemoteClip({
-      type,
-      expiresAt: Date.now() + hoursToMilliseconds(expiresInHours),
-      text: type === "text" ? trimmedText : undefined,
-      file: type === "file" ? selectedFile ?? undefined : undefined,
-      accessCode: accessMode === "code" ? activeShortCode : undefined,
-      accessToken: usingToken ? tokenValue : undefined
-    });
-
-    setToast({
-      kind: "success",
-      message: `云端${type === "text" ? "文本" : "文件"}片段已创建`
-    });
-
-    if (usingToken) {
-      updateSettings({
-        tokenOwnerId: settings.tokenOwnerId ?? settings.environmentId,
-        tokenUpdatedAt: settings.tokenUpdatedAt ?? nowTs,
-        tokenLastUsedAt: nowTs
+    setIsCreatingClip(true);
+    try {
+      const created = await createRemoteClip({
+        type,
+        expiresAt: Date.now() + hoursToMilliseconds(expiresInHours),
+        maxDownloads,
+        accessCode: accessMode === "code" ? activeShortCode : undefined,
+        accessToken: usingToken ? tokenValue : undefined,
+        payload:
+          type === "text"
+            ? { text: trimmedText }
+            : { file: selectedFile ?? undefined }
       });
-    }
 
-    if (accessMode === "code") {
-      setShortCode(generateAccessCode());
+      upsertRemoteClip(created);
+      setToast({
+        kind: "success",
+        message: `云端${type === "text" ? "文本" : "文件"}片段已创建`
+      });
+
+      if (usingToken) {
+        updateSettings({
+          tokenOwnerId: settings.tokenOwnerId ?? settings.environmentId,
+          tokenUpdatedAt: settings.tokenUpdatedAt ?? nowTs,
+          tokenLastUsedAt: nowTs
+        });
+      }
+
+      if (accessMode === "code") {
+        setShortCode(generateAccessCode());
+      }
+      resetForm();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "创建失败，请稍后重试";
+      setToast({ kind: "error", message });
+    } finally {
+      setIsCreatingClip(false);
     }
-    resetForm();
   };
 
   const handleCopyAccess = async (
@@ -446,6 +485,22 @@ const App = () => {
     );
   };
 
+  const refreshRemoteClip = async (clipId: string) => {
+    try {
+      const fresh = await fetchRemoteClip(clipId);
+      updateRemoteClip(clipId, fresh);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "片段已自动销毁";
+      if (/未找到|不存在|过期|销毁/.test(message)) {
+        removeClipFromStore(clipId);
+        setToast({ kind: "info", message: "片段已自动销毁" });
+      } else {
+        console.warn("刷新云端片段失败：", error);
+      }
+    }
+  };
+
   const handleDownloadFile = (clip: RemoteClip) => {
     const file = clip.payload.file;
     if (!file) {
@@ -457,15 +512,19 @@ const App = () => {
     }
 
     const link = document.createElement("a");
-    link.href = file.dataUrl;
-    link.download = file.name;
+    link.href = file.downloadUrl;
+    link.rel = "noopener";
+    link.target = "_blank";
     link.click();
 
-    incrementDownloadCount(clip.id);
     setToast({
       kind: "success",
       message: "文件下载已开始"
     });
+
+    window.setTimeout(() => {
+      void refreshRemoteClip(clip.id);
+    }, 800);
   };
 
   const handleCopyRemoteText = async (clip: RemoteClip) => {
@@ -486,12 +545,19 @@ const App = () => {
     );
   };
 
-  const handleRemoveRemoteClip = (clipId: string) => {
-    removeRemoteClip(clipId);
-    setToast({
-      kind: "info",
-      message: "云端片段已删除"
-    });
+  const handleRemoveRemoteClip = async (clipId: string) => {
+    try {
+      await deleteRemoteClip(clipId);
+      removeClipFromStore(clipId);
+      setToast({
+        kind: "info",
+        message: "云端片段已删除"
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "删除失败，请稍后再试";
+      setToast({ kind: "error", message });
+    }
   };
 
   const handleOpenSettings = () => {
@@ -679,6 +745,37 @@ const App = () => {
                   </span>
                 </label>
 
+                <label className="field">
+                  <span className="field__label">访问次数上限</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={500}
+                    value={maxDownloads}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      setMaxDownloads(
+                        Number.isNaN(value) ? 0 : Math.round(value)
+                      );
+                    }}
+                  />
+                  <div className="field__options">
+                    {MAX_DOWNLOADS_OPTIONS.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        className="btn btn--tiny"
+                        onClick={() => setMaxDownloads(option)}
+                      >
+                        {option} 次
+                      </button>
+                    ))}
+                  </div>
+                  <span className="field__hint">
+                    默认 {DEFAULT_MAX_DOWNLOADS} 次，达到次数后自动销毁。
+                  </span>
+                </label>
+
                 <fieldset className="field field--group">
                   <legend className="field__label">访问凭证</legend>
                   <label className="radio">
@@ -738,8 +835,9 @@ const App = () => {
                   type="button"
                   className="btn btn--secondary btn--full"
                   onClick={handleCreateRemoteClip}
+                  disabled={isCreatingClip}
                 >
-                  创建云端片段
+                  {isCreatingClip ? "创建中..." : "创建云端片段"}
                 </button>
               </div>
             </div>
@@ -762,11 +860,31 @@ const App = () => {
 
           <div className="grid">
             {remoteClips.map((clip) => {
+              const consumed = clip.downloadCount >= clip.maxDownloads;
               const expired = clip.expiresAt <= now;
+              const inactive = expired || consumed;
+              const remainingDownloads = Math.max(
+                0,
+                clip.maxDownloads - clip.downloadCount
+              );
+              const hoursLeft = clip.expiresAt - now;
+              const badgeTone = inactive
+                ? "badge--danger"
+                : remainingDownloads <= 2 || hoursLeft <= 60 * 60 * 1000
+                ? "badge--warning"
+                : "badge--ok";
+              const badgeLabel = inactive
+                ? consumed
+                  ? "已达上限"
+                  : "已过期"
+                : `剩余 ${formatRemaining(clip, now)}`;
+              const directAccessUrl =
+                clip.directUrl ??
+                (clip.accessCode ? buildRelativeAccessPath(clip.accessCode) : "");
               return (
                 <article
                   key={clip.id}
-                  className={`remote-card ${expired ? "remote-card--expired" : ""}`}
+                  className={`remote-card ${inactive ? "remote-card--expired" : ""}`}
                 >
                   <header className="remote-card__header">
                     <div>
@@ -776,23 +894,13 @@ const App = () => {
                         {clip.type === "text" ? "文本片段" : "文件片段"}
                       </span>
                     </div>
-                    <span
-                      className={`badge ${
-                        expired
-                          ? "badge--danger"
-                          : clip.expiresAt - now <= 60 * 60 * 1000
-                          ? "badge--warning"
-                          : "badge--ok"
-                      }`}
-                    >
-                      {expired ? "已销毁" : `剩余 ${formatRemaining(clip, now)}`}
-                    </span>
+                    <span className={`badge ${badgeTone}`}>{badgeLabel}</span>
                   </header>
 
                   <div className="remote-card__body">
                     {clip.type === "text" ? (
                       <pre className="remote-card__content">
-                        {clip.payload.text}
+                        {clip.payload.text ?? ""}
                       </pre>
                     ) : clip.payload.file ? (
                       <div className="file-preview">
@@ -804,7 +912,7 @@ const App = () => {
                           {clip.payload.file.type || "未知类型"}
                         </span>
                         <span className="file-preview__meta">
-                          下载次数：{clip.downloadCount}
+                          下载次数：{clip.downloadCount} / {clip.maxDownloads}
                         </span>
                       </div>
                     ) : (
@@ -819,10 +927,7 @@ const App = () => {
                           type="button"
                           className="badge badge--ghost"
                           onClick={() =>
-                            handleCopyAccess(
-                              buildRelativeAccessPath(clip.accessCode ?? ""),
-                              "访问直链"
-                            )
+                            handleCopyAccess(directAccessUrl, "访问直链")
                           }
                         >
                           直链码：{clip.accessCode}
@@ -839,6 +944,9 @@ const App = () => {
                           Token：{clip.accessToken}
                         </button>
                       ) : null}
+                      <span className="muted small">
+                        剩余访问次数：{remainingDownloads}
+                      </span>
                     </div>
                     <div className="remote-card__actions">
                       {clip.type === "text" ? (
@@ -846,7 +954,7 @@ const App = () => {
                           type="button"
                           className="btn btn--tiny"
                           onClick={() => handleCopyRemoteText(clip)}
-                          disabled={expired}
+                          disabled={inactive}
                         >
                           复制文本
                         </button>
@@ -855,7 +963,7 @@ const App = () => {
                           type="button"
                           className="btn btn--tiny"
                           onClick={() => handleDownloadFile(clip)}
-                          disabled={expired}
+                          disabled={inactive}
                         >
                           下载文件
                         </button>
@@ -863,7 +971,7 @@ const App = () => {
                       <button
                         type="button"
                         className="btn btn--tiny btn--danger"
-                        onClick={() => handleRemoveRemoteClip(clip.id)}
+                        onClick={() => void handleRemoveRemoteClip(clip.id)}
                       >
                         删除
                       </button>

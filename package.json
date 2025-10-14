@@ -9,7 +9,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings=0",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "backend:dev": "python -m backend",
+    "test": "vitest"
   },
   "keywords": [
     "clipboard",

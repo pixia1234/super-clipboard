@@ -1,0 +1,259 @@
+import asyncio
+from datetime import datetime, timezone
+from typing import Optional
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.routing import APIRouter
+from fastapi.staticfiles import StaticFiles
+from .config import settings
+from .models import Clip
+from .repository import ClipRepository
+from .schemas import (
+    ClipCreateRequest,
+    ClipListResponse,
+    ClipResponse,
+    DeleteResponse,
+    IncrementResponse,
+)
+from .storage import store_data_url
+from .utils import build_base_url, build_text_clip_html
+
+repository = ClipRepository(settings.database_path)
+api_router = APIRouter(prefix="/api")
+app = FastAPI(title="Super Clipboard Backend", version="0.1.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+if settings.static_root.exists():
+    app.mount("/static", StaticFiles(directory=settings.static_root), name="static")
+_cleanup_task: Optional[asyncio.Task] = None
+
+
+async def cleanup_worker() -> None:
+    while True:
+        await asyncio.sleep(settings.cleanup_interval_seconds)
+        repository.purge_inactive()
+
+
+@app.on_event("startup")
+async def on_startup() -> None:
+    repository.purge_inactive()
+    global _cleanup_task
+    _cleanup_task = asyncio.create_task(cleanup_worker())
+
+
+@app.on_event("shutdown")
+async def on_shutdown() -> None:
+    if _cleanup_task:
+        _cleanup_task.cancel()
+        try:
+            await _cleanup_task
+        except asyncio.CancelledError:
+            pass
+
+
+@app.get("/healthz")
+async def healthcheck() -> dict[str, object]:
+    return {"ok": True, "timestamp": int(datetime.now(tz=timezone.utc).timestamp() * 1000)}
+
+
+@app.get("/")
+async def index():
+    index_file = settings.static_root / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    return JSONResponse({"name": "Super Clipboard API", "ok": True})
+
+
+@api_router.get("/clips", response_model=ClipListResponse)
+async def list_clips(request: Request) -> ClipListResponse:
+    repository.purge_inactive()
+    base_url = build_base_url(request)
+    clips = [ClipResponse.from_clip(clip, base_url) for clip in repository.list_clips()]
+    return ClipListResponse(items=clips)
+
+
+@api_router.get("/clips/{clip_id}", response_model=ClipResponse)
+async def get_clip(clip_id: str, request: Request) -> ClipResponse:
+    clip = repository.get_clip(clip_id)
+    if not clip:
+        raise HTTPException(status_code=404, detail="片段未找到")
+    if not clip.is_active:
+        repository.delete_clip(clip_id)
+        raise HTTPException(status_code=404, detail="片段已过期或达到下载次数")
+    return ClipResponse.from_clip(clip, build_base_url(request))
+
+
+@api_router.get("/clips/code/{access_code}", response_model=ClipResponse)
+async def get_clip_by_code(access_code: str, request: Request) -> ClipResponse:
+    clip = repository.get_clip_by_code(access_code)
+    if not clip:
+        raise HTTPException(status_code=404, detail="直链不存在或已过期")
+    if not clip.is_active:
+        repository.delete_clip(clip.id)
+        raise HTTPException(status_code=404, detail="直链不存在或已过期")
+    return ClipResponse.from_clip(clip, build_base_url(request))
+
+
+def _resolve_text_payload(body: ClipCreateRequest) -> str:
+    return body.payload.text or ""
+
+
+def _resolve_file(body: ClipCreateRequest):
+    if not body.payload.file:
+        raise HTTPException(status_code=400, detail="文件数据缺失")
+    stored_file = store_data_url(body.payload.file.name, body.payload.file.dataUrl)
+    if stored_file.size > settings.max_file_size_bytes:
+        stored_file.path.unlink(missing_ok=True)  # type: ignore[attr-defined]
+        raise HTTPException(status_code=400, detail="文件体积超过限制")
+    return stored_file
+
+
+@api_router.post("/clips", response_model=ClipResponse, status_code=201)
+async def create_clip(body: ClipCreateRequest, request: Request) -> ClipResponse:
+    stored_file = None
+    try:
+        if body.type == "file":
+            stored_file = _resolve_file(body)
+        clip = repository.create_clip(
+            clip_type=body.type,
+            expires_at_ms=body.expiresAt,
+            max_downloads=body.maxDownloads,
+            access_code=body.accessCode,
+            access_token=body.accessToken,
+            text=_resolve_text_payload(body) if body.type == "text" else None,
+            stored_file=stored_file,
+        )
+    except ValueError as error:
+        if stored_file:
+            stored_file.path.unlink(missing_ok=True)  # type: ignore[attr-defined]
+        message = str(error)
+        status = 409 if "已存在" in message else 400
+        raise HTTPException(status_code=status, detail=message)
+    return ClipResponse.from_clip(clip, build_base_url(request))
+
+
+@api_router.delete("/clips/{clip_id}", response_model=DeleteResponse)
+async def delete_clip(clip_id: str) -> DeleteResponse:
+    removed = repository.delete_clip(clip_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="片段未找到")
+    return DeleteResponse(ok=True)
+
+
+@api_router.post("/clips/{clip_id}/download", response_model=IncrementResponse)
+async def track_download(clip_id: str, request: Request) -> IncrementResponse:
+    clip, reached = repository.increment_downloads(clip_id)
+    if not clip:
+        raise HTTPException(status_code=404, detail="片段未找到")
+    if not clip.is_active and reached:
+        repository.delete_clip(clip_id)
+        raise HTTPException(status_code=410, detail="片段已过期或销毁")
+    return IncrementResponse(
+        clip=ClipResponse.from_clip(clip, build_base_url(request)),
+        removed=reached,
+    )
+
+
+@api_router.get("/clips/{clip_id}/file")
+async def download_file(
+    clip_id: str,
+    background: BackgroundTasks,
+) -> FileResponse:
+    clip = repository.get_clip(clip_id)
+    if not clip:
+        raise HTTPException(status_code=404, detail="片段未找到")
+    if not clip.stored_file:
+        repository.delete_clip(clip_id)
+        raise HTTPException(status_code=410, detail="文件已丢失")
+    if not clip.is_active:
+        repository.delete_clip(clip_id)
+        raise HTTPException(status_code=410, detail="文件已过期或销毁")
+    file_path = clip.stored_file.path
+    if not file_path.exists():
+        repository.delete_clip(clip_id)
+        raise HTTPException(status_code=410, detail="文件已丢失")
+    clip, reached = repository.increment_downloads(clip_id)
+    if not clip:
+        raise HTTPException(status_code=404, detail="片段未找到")
+    if reached:
+        background.add_task(repository.delete_clip, clip_id)
+    return FileResponse(
+        path=file_path,
+        media_type=clip.stored_file.mime if clip.stored_file else "application/octet-stream",
+        filename=clip.stored_file.name if clip.stored_file else "clip",
+        background=background,
+    )
+
+
+app.include_router(api_router)
+
+
+def _get_active_clip_by_code(access_code: str) -> Clip:
+    clip = repository.get_clip_by_code(access_code)
+    if not clip:
+        raise HTTPException(status_code=404, detail="直链不存在或已过期")
+    if not clip.is_active:
+        repository.delete_clip(clip.id)
+        raise HTTPException(status_code=404, detail="直链不存在或已过期")
+    return clip
+
+
+def _increment_clip_downloads(clip: Clip) -> tuple[Clip, bool]:
+    updated_clip, reached = repository.increment_downloads(clip.id)
+    if not updated_clip:
+        raise HTTPException(status_code=404, detail="直链不存在或已过期")
+    return updated_clip, reached
+
+
+def _dispatch_clip_response(
+    clip: Clip,
+    reached: bool,
+    background: BackgroundTasks,
+    raw: bool,
+):
+    if clip.type == "text":
+        if reached:
+            background.add_task(repository.delete_clip, clip.id)
+        if raw:
+            return PlainTextResponse(content=clip.text or "")
+        html = build_text_clip_html(
+            clip.text or "",
+            clip.created_at,
+            clip.download_count,
+            clip.access_code,
+        )
+        return HTMLResponse(content=html)
+    if clip.stored_file:
+        if reached:
+            background.add_task(repository.delete_clip, clip.id)
+        file_path = clip.stored_file.path
+        if not file_path.exists():
+            repository.delete_clip(clip.id)
+            raise HTTPException(status_code=410, detail="文件已丢失")
+        return FileResponse(
+            path=file_path,
+            media_type=clip.stored_file.mime,
+            filename=clip.stored_file.name,
+            background=background,
+        )
+    repository.delete_clip(clip.id)
+    raise HTTPException(status_code=410, detail="文件数据缺失")
+
+
+@app.get("/{access_code}/raw")
+async def resolve_code_raw(access_code: str, background: BackgroundTasks):
+    clip = _get_active_clip_by_code(access_code)
+    clip, reached = _increment_clip_downloads(clip)
+    return _dispatch_clip_response(clip, reached, background, raw=True)
+
+
+@app.get("/{access_code}")
+async def resolve_code(access_code: str, background: BackgroundTasks):
+    clip = _get_active_clip_by_code(access_code)
+    clip, reached = _increment_clip_downloads(clip)
+    return _dispatch_clip_response(clip, reached, background, raw=False)

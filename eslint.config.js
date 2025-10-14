@@ -38,7 +38,13 @@ export default [
         window: "readonly",
         document: "readonly",
         navigator: "readonly",
-        crypto: "readonly"
+        crypto: "readonly",
+        fetch: "readonly",
+        URL: "readonly",
+        File: "readonly",
+        FileReader: "readonly",
+        HTMLInputElement: "readonly",
+        console: "readonly"
       }
     },
     plugins: {
@@ -51,6 +57,7 @@ export default [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }
       ],
+      "no-undef": "off",
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn"
     }

@@ -2,11 +2,16 @@ import { create } from "zustand";
 
 export type ClipType = "text" | "file";
 
-export type StoredFile = {
+export type RemoteFileInfo = {
   name: string;
   size: number;
   type: string;
-  dataUrl: string;
+  downloadUrl: string;
+};
+
+export type RemoteClipPayload = {
+  text?: string | null;
+  file?: RemoteFileInfo | null;
 };
 
 export type RemoteClip = {
@@ -14,22 +19,12 @@ export type RemoteClip = {
   type: ClipType;
   createdAt: number;
   expiresAt: number;
-  accessCode?: string;
-  accessToken?: string;
-  payload: {
-    text?: string;
-    file?: StoredFile;
-  };
+  maxDownloads: number;
   downloadCount: number;
-};
-
-export type CreateRemoteClip = {
-  type: ClipType;
-  expiresAt: number;
-  text?: string;
-  file?: StoredFile;
-  accessCode?: string;
-  accessToken?: string;
+  accessCode?: string | null;
+  accessToken?: string | null;
+  payload: RemoteClipPayload;
+  directUrl?: string | null;
 };
 
 export type ClipboardSettings = {
@@ -42,57 +37,38 @@ export type ClipboardSettings = {
 
 type ClipboardStore = {
   remoteClips: RemoteClip[];
-  addRemoteClip: (clip: CreateRemoteClip) => RemoteClip;
+  setRemoteClips: (clips: RemoteClip[]) => void;
+  upsertRemoteClip: (clip: RemoteClip) => void;
+  updateRemoteClip: (clipId: string, clip: RemoteClip) => void;
   removeRemoteClip: (clipId: string) => void;
-  replaceRemoteClips: (clips: RemoteClip[]) => void;
-  incrementDownloadCount: (clipId: string) => void;
   settings: ClipboardSettings;
   updateSettings: (changes: Partial<ClipboardSettings>) => void;
 };
 
-const buildRemoteClip = (partial: CreateRemoteClip): RemoteClip => ({
-  id: crypto.randomUUID(),
-  type: partial.type,
-  createdAt: Date.now(),
-  expiresAt: partial.expiresAt,
-  accessCode: partial.accessCode,
-  accessToken: partial.accessToken,
-  payload: {
-    text: partial.type === "text" ? partial.text ?? "" : undefined,
-    file: partial.type === "file" ? partial.file : undefined
-  },
-  downloadCount: 0
-});
-
 export const useClipboardStore = create<ClipboardStore>((set) => ({
   remoteClips: [],
-  addRemoteClip: (clip) => {
-    const withId = buildRemoteClip(clip);
+  setRemoteClips: (clips) =>
+    set({
+      remoteClips: [...clips].sort((a, b) => b.createdAt - a.createdAt)
+    }),
+  upsertRemoteClip: (clip) =>
+    set((state) => {
+      const existing = state.remoteClips.filter((item) => item.id !== clip.id);
+      return {
+        remoteClips: [clip, ...existing].sort(
+          (a, b) => b.createdAt - a.createdAt
+        )
+      };
+    }),
+  updateRemoteClip: (clipId, clip) =>
     set((state) => ({
-      remoteClips: [withId, ...state.remoteClips].sort(
-        (a, b) => b.createdAt - a.createdAt
+      remoteClips: state.remoteClips.map((item) =>
+        item.id === clipId ? clip : item
       )
-    }));
-    return withId;
-  },
+    })),
   removeRemoteClip: (clipId) =>
     set((state) => ({
       remoteClips: state.remoteClips.filter((item) => item.id !== clipId)
-    })),
-  replaceRemoteClips: (clips) =>
-    set({
-      remoteClips: clips
-    }),
-  incrementDownloadCount: (clipId) =>
-    set((state) => ({
-      remoteClips: state.remoteClips.map((item) =>
-        item.id === clipId
-          ? {
-              ...item,
-              downloadCount: item.downloadCount + 1
-            }
-          : item
-      )
     })),
   settings: {
     persistentToken: "",
