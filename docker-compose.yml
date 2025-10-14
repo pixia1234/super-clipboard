@@ -1,0 +1,18 @@
+services:
+  super-clipboard:
+    build:
+      context: .
+    ports:
+      - "5173:5173"
+    environment:
+      SUPER_CLIPBOARD_APP_HOST: 0.0.0.0
+      SUPER_CLIPBOARD_APP_PORT: 5173
+      SUPER_CLIPBOARD_DATABASE_PATH: /app/backend/storage/clipboard.db
+      SUPER_CLIPBOARD_FILE_STORAGE_DIR: /app/backend/storage/files
+    volumes:
+      - clipboard-data:/app/backend/storage
+    restart: unless-stopped
+
+volumes:
+  clipboard-data:
+    driver: local

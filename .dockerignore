@@ -1,0 +1,15 @@
+.git
+node_modules
+dist
+dist-ssr
+backend/storage
+__pycache__
+*.pyc
+*.pyo
+.env
+.env.*
+README.md
+Dockerfile
+docker-compose.yml
+environment.yml
+backend/tests/__pycache__
