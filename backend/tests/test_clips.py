@@ -94,3 +94,29 @@ def test_file_clip_download_limit(tmp_path):
         # second attempt should fail because maxDownloads is 1
         second_download = client.get(f"/api/clips/{clip['id']}/file")
         assert second_download.status_code in {404, 410}
+
+
+def test_token_direct_access(tmp_path):
+    with build_client(tmp_path) as client:
+        response = client.post(
+            "/api/clips",
+            json={
+                "type": "text",
+                "expiresAt": future_timestamp(),
+                "maxDownloads": 3,
+                "accessToken": "pixia1234",
+                "payload": {"text": "hello from token"},
+            },
+        )
+        assert response.status_code == 201
+        clip = response.json()
+        assert clip["accessToken"] == "pixia1234"
+        assert clip["accessCode"] is None
+
+        direct = client.get("/pixia1234")
+        assert direct.status_code == 200
+        assert "hello from token" in direct.text
+
+        raw = client.get("/pixia1234/raw")
+        assert raw.status_code == 200
+        assert raw.text == "hello from token"

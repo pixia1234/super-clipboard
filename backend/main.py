@@ -196,8 +196,13 @@ async def download_file(
 app.include_router(api_router)
 
 
-def _get_active_clip_by_code(access_code: str) -> Clip:
-    clip = repository.get_clip_by_code(access_code)
+def _get_active_clip(identifier: str) -> Clip:
+    trimmed = identifier.strip()
+    if not trimmed:
+        raise HTTPException(status_code=404, detail="直链不存在或已过期")
+    clip = repository.get_clip_by_code(trimmed)
+    if not clip:
+        clip = repository.get_clip_by_token(trimmed)
     if not clip:
         raise HTTPException(status_code=404, detail="直链不存在或已过期")
     if not clip.is_active:
@@ -250,13 +255,13 @@ def _dispatch_clip_response(
 
 @app.get("/{access_code}/raw")
 async def resolve_code_raw(access_code: str, background: BackgroundTasks):
-    clip = _get_active_clip_by_code(access_code)
+    clip = _get_active_clip(access_code)
     clip, reached = _increment_clip_downloads(clip)
     return _dispatch_clip_response(clip, reached, background, raw=True)
 
 
 @app.get("/{access_code}")
 async def resolve_code(access_code: str, background: BackgroundTasks):
-    clip = _get_active_clip_by_code(access_code)
+    clip = _get_active_clip(access_code)
     clip, reached = _increment_clip_downloads(clip)
     return _dispatch_clip_response(clip, reached, background, raw=False)

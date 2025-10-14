@@ -14,6 +14,8 @@ dist
 dist-ssr
 *.local
 backend/storage/
+/backend/__pycache__/
+
 __pycache__/
 *.py[cod]
 

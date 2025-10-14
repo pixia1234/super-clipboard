@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS clips (
 );
 CREATE INDEX IF NOT EXISTS idx_clips_expires_at ON clips(expires_at);
 CREATE INDEX IF NOT EXISTS idx_clips_access_code ON clips(access_code);
+CREATE INDEX IF NOT EXISTS idx_clips_access_token ON clips(access_token);
 """
 
 
@@ -153,6 +154,14 @@ class ClipRepository:
             row = conn.execute(
                 "SELECT * FROM clips WHERE id = ?",
                 (clip_id,)
+            ).fetchone()
+        return self._row_to_clip(row) if row else None
+
+    def get_clip_by_token(self, access_token: str) -> Optional[Clip]:
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM clips WHERE access_token = ? ORDER BY created_at DESC",
+                (access_token,)
             ).fetchone()
         return self._row_to_clip(row) if row else None
 
