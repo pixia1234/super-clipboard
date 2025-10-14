@@ -182,9 +182,9 @@ const App = () => {
           setRemoteClips(clips);
         }
       } catch (error) {
-        console.warn("获取云端片段失败：", error);
+        console.warn("获取云端剪贴板失败：", error);
         if (!cancelled) {
-          setToast({ kind: "error", message: "获取云端片段失败，请稍后重试" });
+          setToast({ kind: "error", message: "获取云端剪贴板失败，请稍后重试" });
         }
       }
     };
@@ -442,7 +442,7 @@ const App = () => {
       upsertRemoteClip(created);
       setToast({
         kind: "success",
-        message: `云端${type === "text" ? "文本" : "文件"}片段已创建`
+        message: `云端${type === "text" ? "文本" : "文件"}剪贴板已创建`
       });
 
       if (usingToken) {
@@ -496,7 +496,7 @@ const App = () => {
         removeClipFromStore(clipId);
         setToast({ kind: "info", message: "片段已自动销毁" });
       } else {
-        console.warn("刷新云端片段失败：", error);
+        console.warn("刷新云端剪贴板失败：", error);
       }
     }
   };
@@ -551,7 +551,7 @@ const App = () => {
       removeClipFromStore(clipId);
       setToast({
         kind: "info",
-        message: "云端片段已删除"
+        message: "云端剪贴板已删除"
       });
     } catch (error) {
       const message =
@@ -640,8 +640,20 @@ const App = () => {
             type="button"
             className="btn btn--ghost settings-trigger"
             onClick={handleOpenSettings}
+            aria-label="环境设置"
+            title="环境设置"
           >
-            环境设置
+            <span className="sr-only">环境设置</span>
+            <svg
+              className="settings-trigger__icon"
+              viewBox="0 0 24 24"
+              role="img"
+              aria-hidden="true"
+            >
+              <path
+                d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm8.94-4.87a1 1 0 0 0 0-.76l-1.22-2.97a1 1 0 0 0-1.16-.6l-2.4.55a6.97 6.97 0 0 0-1.68-.98l-.36-2.44A1 1 0 0 0 13.14 2h-2.3a1 1 0 0 0-.99.83l-.36 2.44a6.97 6.97 0 0 0-1.68.98l-2.4-.55a1 1 0 0 0-1.16.6L3.03 9.87a1 1 0 0 0 0 .76l2.04 2.49a6.93 6.93 0 0 0 0 1.96l-2.04 2.49a1 1 0 0 0 0 .76l1.22 2.97a1 1 0 0 0 1.16.6l2.4-.55c.5.4 1.07.73 1.68.98l.36 2.44a1 1 0 0 0 .99.83h2.3a1 1 0 0 0 .99-.83l.36-2.44c.61-.25 1.18-.58 1.68-.98l2.4.55a1 1 0 0 0 1.16-.6l1.22-2.97a1 1 0 0 0 0-.76l-2.04-2.49c.06-.32.1-.65.1-.98 0-.33-.04-.66-.1-.98l2.04-2.49Z"
+              />
+            </svg>
           </button>
         </div>
         <h1>专注云端直链的超级剪贴板</h1>
@@ -654,7 +666,7 @@ const App = () => {
         <section className="card">
           <div className="card__header">
             <div>
-              <h2>创建云端片段</h2>
+              <h2>创建云端剪贴板</h2>
               <p className="muted">
                 录入文本或上传最多 50MB 的文件，生成短码 / 持久 Token 并设置自动销毁。
               </p>
@@ -837,7 +849,7 @@ const App = () => {
                   onClick={handleCreateRemoteClip}
                   disabled={isCreatingClip}
                 >
-                  {isCreatingClip ? "创建中..." : "创建云端片段"}
+                  {isCreatingClip ? "创建中..." : "创建云端剪贴板"}
                 </button>
               </div>
             </div>
@@ -847,13 +859,13 @@ const App = () => {
         <section className="card">
           <div className="card__header">
             <div>
-              <h2>云端片段列表</h2>
+              <h2>云端剪贴板列表</h2>
               <p className="muted">
                 {remoteClips.length
                   ? hasActiveClips
-                    ? `共有 ${remoteClips.length} 个片段，过期后自动销毁。`
-                    : "全部片段均已过期或销毁。"
-                  : "尚未创建云端片段。"}
+                    ? `共有 ${remoteClips.length} 个项目，过期后自动销毁。`
+                    : "全部项目均已过期或销毁。"
+                  : "尚未创建云端剪贴板。"}
               </p>
             </div>
           </div>
@@ -1022,7 +1034,7 @@ const App = () => {
                   </button>
                 </div>
                 <span className="field__hint">
-                  云端片段可复用该 Token 进行持久访问，720 小时未使用会自动销毁。
+                  云端剪贴板可复用该 Token 进行持久访问，720 小时未使用会自动销毁。
                 </span>
               </label>
               {tokenLastActivityLabel ? (
