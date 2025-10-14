@@ -18,6 +18,8 @@ import {
   fetchRemoteClip
 } from "./utils/api";
 import "./App.css";
+import { useI18n } from "./i18n/I18nProvider";
+import type { Locale } from "./i18n/locales";
 
 const buildRelativeAccessPath = (accessCode: string): string => {
   const trimmed = accessCode.trim();
@@ -41,7 +43,7 @@ const MIN_EXPIRY_HOURS = 1;
 const MAX_EXPIRY_HOURS = 120;
 const DEFAULT_EXPIRY_HOURS = 24;
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50MB
-const TOKEN_EXPIRY_MS = 720 * 60 * 60 * 1000; // 720 小时
+const TOKEN_EXPIRY_MS = 720 * 60 * 60 * 1000; // 720 hours
 const DEFAULT_MAX_DOWNLOADS = 10;
 const MAX_DOWNLOADS_OPTIONS = [3, 5, 10, 20, 50, 100];
 
@@ -54,63 +56,16 @@ type DraftFile = {
 
 const emptyToast: ToastState | null = null;
 
-const formatTimestamp = (timestamp: number): string =>
-  new Intl.DateTimeFormat("zh-CN", {
-    dateStyle: "medium",
-    timeStyle: "short"
-  }).format(timestamp);
-
-const formatRemaining = (clip: RemoteClip, now: number): string => {
-  const diff = clip.expiresAt - now;
-  if (diff <= 0) {
-    return "已过期";
-  }
-
-  const hours = Math.floor(diff / (1000 * 60 * 60));
-  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-  if (hours > 0) {
-    return `${hours} 小时${minutes > 0 ? ` ${minutes} 分` : ""}`;
-  }
-  return `${Math.max(1, minutes)} 分钟`;
-};
-
-const formatDuration = (ms: number): string => {
-  if (ms <= 0) {
-    return "0 分";
-  }
-
-  const totalMinutes = Math.floor(ms / (60 * 1000));
-  const days = Math.floor(totalMinutes / (60 * 24));
-  const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
-  const minutes = totalMinutes % 60;
-
-  if (days > 0) {
-    if (hours > 0) {
-      return `${days} 天 ${hours} 小时`;
-    }
-    return `${days} 天`;
-  }
-
-  if (hours > 0) {
-    return minutes > 0 ? `${hours} 小时 ${minutes} 分` : `${hours} 小时`;
-  }
-
-  return `${Math.max(1, minutes)} 分`;
-};
-
-const clipTitle = (clip: RemoteClip): string => {
-  if (clip.type === "text") {
-    const text = clip.payload.text ?? "";
-    if (!text) {
-      return "文本片段";
-    }
-    const compact = text.replace(/\s+/g, " ").trim();
-    return compact.length > 32 ? `${compact.slice(0, 32)}…` : compact;
-  }
-  return clip.payload.file?.name ?? "文件片段";
-};
-
 const App = () => {
+  const {
+    t,
+    formatDateTime,
+    formatDuration,
+    formatRemaining,
+    locale,
+    setLocale,
+    options
+  } = useI18n();
   const {
     remoteClips,
     setRemoteClips,
@@ -167,7 +122,7 @@ const App = () => {
         updateSettings(sanitized);
       }
     } catch (error) {
-      console.warn("读取环境设置失败：", error);
+      console.warn("Failed to load environment settings:", error);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -182,9 +137,9 @@ const App = () => {
           setRemoteClips(clips);
         }
       } catch (error) {
-        console.warn("获取云端剪贴板失败：", error);
+        console.warn(t("toast.loadFailed"), error);
         if (!cancelled) {
-          setToast({ kind: "error", message: "获取云端剪贴板失败，请稍后重试" });
+          setToast({ kind: "error", message: t("toast.loadFailed") });
         }
       }
     };
@@ -237,7 +192,7 @@ const App = () => {
       setSettingsTokenDraft("");
       setToast({
         kind: "info",
-        message: "持久 Token 超过 720 小时未使用，已自动销毁"
+        message: t("toast.tokenExpired")
       });
     }
   }, [
@@ -281,7 +236,7 @@ const App = () => {
     if (!fromSystem) {
       setToast({
         kind: "error",
-        message: "无法读取系统剪贴板，请手动粘贴内容"
+        message: t("toast.clipboardReadFailed")
       });
       return;
     }
@@ -289,7 +244,7 @@ const App = () => {
     setTextContent(fromSystem);
     setToast({
       kind: "success",
-      message: "已导入系统剪贴板内容"
+      message: t("toast.clipboardImported")
     });
   };
 
@@ -303,7 +258,7 @@ const App = () => {
     if (file.size > MAX_FILE_SIZE_BYTES) {
       setToast({
         kind: "error",
-        message: "文件体积超过 50MB 限制，请压缩后重试"
+        message: t("toast.fileTooLarge")
       });
       event.target.value = "";
       return;
@@ -318,10 +273,10 @@ const App = () => {
         dataUrl
       });
     } catch (error) {
-      console.warn("读取文件失败：", error);
+      console.warn(t("toast.fileReadFailed"), error);
       setToast({
         kind: "error",
-        message: "读取文件失败，请稍后再试"
+        message: t("toast.fileReadFailed")
       });
     }
   };
@@ -334,7 +289,7 @@ const App = () => {
     if (type === "text" && !trimmedText) {
       setToast({
         kind: "info",
-        message: "请填写需要分享的文本内容"
+        message: t("toast.textRequired")
       });
       return;
     }
@@ -342,7 +297,7 @@ const App = () => {
     if (type === "file" && !selectedFile) {
       setToast({
         kind: "info",
-        message: "请先选择需要上传的文件"
+        message: t("toast.fileRequired")
       });
       return;
     }
@@ -354,7 +309,7 @@ const App = () => {
     ) {
       setToast({
         kind: "info",
-        message: "自动销毁时间需在 1 到 120 小时之间"
+        message: t("toast.expiryInvalid")
       });
       return;
     }
@@ -362,7 +317,7 @@ const App = () => {
     if (Number.isNaN(maxDownloads) || maxDownloads < 1 || maxDownloads > 500) {
       setToast({
         kind: "info",
-        message: "单个片段的访问次数需在 1 到 500 次之间"
+        message: t("toast.downloadLimitInvalid")
       });
       return;
     }
@@ -376,7 +331,7 @@ const App = () => {
       if (!tokenValue) {
         setToast({
           kind: "info",
-          message: "请先在环境设置中配置持久 Token"
+          message: t("toast.tokenRequired")
         });
         setAccessMode("code");
         return;
@@ -394,7 +349,7 @@ const App = () => {
         setSettingsTokenDraft("");
         setToast({
           kind: "info",
-          message: "持久 Token 超过 720 小时未使用，已自动销毁"
+          message: t("toast.tokenExpired")
         });
         return;
       }
@@ -402,7 +357,7 @@ const App = () => {
       if (settings.tokenOwnerId && settings.tokenOwnerId !== settings.environmentId) {
         setToast({
           kind: "error",
-          message: "持久 Token 已被其他设备占用，无法使用"
+          message: t("toast.tokenInUse")
         });
         setAccessMode("code");
         return;
@@ -411,7 +366,7 @@ const App = () => {
       if (tokenValue.length < 7) {
         setToast({
           kind: "info",
-          message: "持久 Token 至少需要 7 位"
+          message: t("toast.tokenTooShort")
         });
         return;
       }
@@ -419,7 +374,7 @@ const App = () => {
       if (!/^\d{5}$/.test(activeShortCode)) {
         setToast({
           kind: "info",
-          message: "直链码需为 5 位数字"
+          message: t("toast.shortCodeInvalid")
         });
         return;
       }
@@ -442,7 +397,10 @@ const App = () => {
       upsertRemoteClip(created);
       setToast({
         kind: "success",
-        message: `云端${type === "text" ? "文本" : "文件"}剪贴板已创建`
+        message:
+          type === "text"
+            ? t("toast.createSuccess.text")
+            : t("toast.createSuccess.file")
       });
 
       if (usingToken) {
@@ -459,7 +417,7 @@ const App = () => {
       resetForm();
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "创建失败，请稍后重试";
+        error instanceof Error ? error.message : t("toast.createFailed");
       setToast({ kind: "error", message });
     } finally {
       setIsCreatingClip(false);
@@ -468,20 +426,24 @@ const App = () => {
 
   const handleCopyAccess = async (
     value: string,
-    kind: "访问直链" | "Token"
+    target: "direct-link" | "token"
   ) => {
+    const label =
+      target === "direct-link"
+        ? t("copy.target.directLink")
+        : t("copy.target.token");
     if (!value) {
       setToast({
         kind: "error",
-        message: `当前片段没有可复制的${kind}`
+        message: t("toast.noAccessValue", { target: label })
       });
       return;
     }
     const ok = await writeToClipboard(value);
     setToast(
       ok
-        ? { kind: "success", message: `${kind} 已复制` }
-        : { kind: "error", message: `复制${kind}失败，请稍后再试` }
+        ? { kind: "success", message: t("toast.copySuccess", { target: label }) }
+        : { kind: "error", message: t("toast.copyFailed", { target: label }) }
     );
   };
 
@@ -491,12 +453,12 @@ const App = () => {
       updateRemoteClip(clipId, fresh);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "片段已自动销毁";
+        error instanceof Error ? error.message : t("toast.clipAutoDeleted");
       if (/未找到|不存在|过期|销毁/.test(message)) {
         removeClipFromStore(clipId);
-        setToast({ kind: "info", message: "片段已自动销毁" });
+        setToast({ kind: "info", message: t("toast.clipAutoDeleted") });
       } else {
-        console.warn("刷新云端剪贴板失败：", error);
+        console.warn(t("toast.loadFailed"), error);
       }
     }
   };
@@ -506,7 +468,7 @@ const App = () => {
     if (!file) {
       setToast({
         kind: "error",
-        message: "文件数据丢失，请重新上传"
+        message: t("toast.fileMissing")
       });
       return;
     }
@@ -519,7 +481,7 @@ const App = () => {
 
     setToast({
       kind: "success",
-      message: "文件下载已开始"
+      message: t("toast.fileDownloadStarted")
     });
 
     window.setTimeout(() => {
@@ -532,7 +494,7 @@ const App = () => {
     if (!text) {
       setToast({
         kind: "error",
-        message: "片段内容为空"
+        message: t("toast.clipEmpty")
       });
       return;
     }
@@ -540,8 +502,14 @@ const App = () => {
     const ok = await writeToClipboard(text);
     setToast(
       ok
-        ? { kind: "success", message: "文本已复制" }
-        : { kind: "error", message: "复制失败，请稍后再试" }
+        ? {
+            kind: "success",
+            message: t("toast.copySuccess", { target: t("copy.target.text") })
+          }
+        : {
+            kind: "error",
+            message: t("toast.copyFailed", { target: t("copy.target.text") })
+          }
     );
   };
 
@@ -551,11 +519,11 @@ const App = () => {
       removeClipFromStore(clipId);
       setToast({
         kind: "info",
-        message: "云端剪贴板已删除"
+        message: t("toast.clipDeleted")
       });
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "删除失败，请稍后再试";
+        error instanceof Error ? error.message : t("toast.removeFailed");
       setToast({ kind: "error", message });
     }
   };
@@ -579,7 +547,7 @@ const App = () => {
     if (trimmedToken && trimmedToken.length < 7) {
       setToast({
         kind: "info",
-        message: "持久 Token 至少需要 7 位"
+        message: t("toast.tokenTooShort")
       });
       return;
     }
@@ -611,7 +579,7 @@ const App = () => {
     setSettingsTokenDraft(trimmedToken);
     setToast({
       kind: "success",
-      message: "环境设置已保存"
+      message: t("toast.settingsSaved")
     });
     setIsSettingsOpen(false);
   };
@@ -619,70 +587,107 @@ const App = () => {
   const tokenReferenceTime = settings.tokenLastUsedAt ?? settings.tokenUpdatedAt;
   const tokenLastActivityLabel = settings.persistentToken
     ? settings.tokenLastUsedAt
-      ? `最近使用：${formatTimestamp(settings.tokenLastUsedAt)}`
+      ? t("token.lastUsed", {
+          timestamp: formatDateTime(settings.tokenLastUsedAt)
+        })
       : settings.tokenUpdatedAt
-      ? `设置时间：${formatTimestamp(settings.tokenUpdatedAt)}`
+      ? t("token.updatedAt", {
+          timestamp: formatDateTime(settings.tokenUpdatedAt)
+        })
       : null
     : null;
   const tokenExpiryNotice =
     settings.persistentToken && tokenReferenceTime
-      ? `距离自动销毁：${formatDuration(
-          Math.max(0, TOKEN_EXPIRY_MS - (now - tokenReferenceTime))
-        )}`
+      ? t("token.expiryNotice", {
+          duration: formatDuration(
+            Math.max(0, TOKEN_EXPIRY_MS - (now - tokenReferenceTime))
+          )
+        })
       : null;
+
+  const listSummary = remoteClips.length
+    ? hasActiveClips
+      ? t("list.summaryActive", { count: remoteClips.length })
+      : t("list.summaryAllInactive")
+    : t("list.summaryEmpty");
+
+  const getClipTitle = (clip: RemoteClip): string => {
+    if (clip.type === "text") {
+      const text = (clip.payload.text ?? "").replace(/\s+/g, " ").trim();
+      if (!text) {
+        return t("list.clipType.text");
+      }
+      return text.length > 32 ? `${text.slice(0, 32)}…` : text;
+    }
+    return clip.payload.file?.name ?? t("list.clipType.file");
+  };
 
   return (
     <div>
       <header className="hero">
         <div className="hero__top">
           <div className="hero__badge">Super Clipboard</div>
-          <button
-            type="button"
-            className="btn btn--ghost settings-trigger"
-            onClick={handleOpenSettings}
-            aria-label="环境设置"
-            title="环境设置"
-          >
-            <span className="sr-only">环境设置</span>
-            <svg
-              className="settings-trigger__icon"
-              viewBox="0 0 48 48"
-              role="img"
-              aria-hidden="true"
+          <div className="hero__controls">
+            <label className="sr-only" htmlFor="locale-select">
+              {t("locale.switcherLabel")}
+            </label>
+            <select
+              id="locale-select"
+              className="language-switcher"
+              value={locale}
+              onChange={(event) => setLocale(event.target.value as Locale)}
+              aria-label={t("locale.switcherLabel")}
             >
-              <path
-                d="M24 29C26.7614 29 29 26.7614 29 24C29 21.2386 26.7614 19 24 19C21.2386 19 19 21.2386 19 24C19 26.7614 21.2386 29 24 29Z"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M8.22182 18.2957C8.07786 19.1589 8 20.0678 8 21C8 21.9322 8.07786 22.8411 8.22182 23.7043L5.09131 26.4268C4.79584 26.679 4.73849 27.184 4.9641 27.5236L7.9641 32.0536C8.1897 32.3933 8.65243 32.5116 9.00876 32.3066L12.4196 30.3885C13.6503 31.3354 15.0182 32.084 16.4816 32.5875L17.0206 36.3415C17.0786 36.7426 17.4145 37.0412 17.807 37.0412H30.193C30.5855 37.0412 30.9214 36.7426 30.9794 36.3415L31.5184 32.5875C32.9818 32.084 34.3497 31.3354 35.5804 30.3885L38.9912 32.3066C39.3476 32.5116 39.8103 32.3933 40.0359 32.0536L43.0359 27.5236C43.2615 27.184 43.2042 26.679 42.9087 26.4268L39.7782 23.7043C39.9221 22.8411 40 21.9322 40 21C40 20.0678 39.9221 19.1589 39.7782 18.2957L42.9087 15.5732C43.2042 15.321 43.2615 14.816 43.0359 14.4764L40.0359 9.94643C39.8103 9.60672 39.3476 9.48843 38.9912 9.69343L35.5804 11.6115C34.3497 10.6646 32.9818 9.91602 31.5184 9.41253L30.9794 5.65846C30.9214 5.25735 30.5855 4.95874 30.193 4.95874H17.807C17.4145 4.95874 17.0786 5.25735 17.0206 5.65846L16.4816 9.41253C15.0182 9.91602 13.6503 10.6646 12.4196 11.6115L9.00876 9.69343C8.65243 9.48843 8.1897 9.60672 7.9641 9.94643L4.9641 14.4764C4.73849 14.816 4.79584 15.321 5.09131 15.5732L8.22182 18.2957Z"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
+              {options.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {t(option.labelKey)}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="btn btn--ghost settings-trigger"
+              onClick={handleOpenSettings}
+              aria-label={t("hero.settings")}
+              title={t("hero.settings")}
+            >
+              <span className="sr-only">{t("hero.settings")}</span>
+              <svg
+                className="settings-trigger__icon"
+                viewBox="0 0 48 48"
+                role="img"
+                aria-hidden="true"
+              >
+                <path
+                  d="M24 29C26.7614 29 29 26.7614 29 24C29 21.2386 26.7614 19 24 19C21.2386 19 19 21.2386 19 24C19 26.7614 21.2386 29 24 29Z"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M8.22182 18.2957C8.07786 19.1589 8 20.0678 8 21C8 21.9322 8.07786 22.8411 8.22182 23.7043L5.09131 26.4268C4.79584 26.679 4.73849 27.184 4.9641 27.5236L7.9641 32.0536C8.1897 32.3933 8.65243 32.5116 9.00876 32.3066L12.4196 30.3885C13.6503 31.3354 15.0182 32.084 16.4816 32.5875L17.0206 36.3415C17.0786 36.7426 17.4145 37.0412 17.807 37.0412H30.193C30.5855 37.0412 30.9214 36.7426 30.9794 36.3415L31.5184 32.5875C32.9818 32.084 34.3497 31.3354 35.5804 30.3885L38.9912 32.3066C39.3476 32.5116 39.8103 32.3933 40.0359 32.0536L43.0359 27.5236C43.2615 27.184 43.2042 26.679 42.9087 26.4268L39.7782 23.7043C39.9221 22.8411 40 21.9322 40 21C40 20.0678 39.9221 19.1589 39.7782 18.2957L42.9087 15.5732C43.2042 15.321 43.2615 14.816 43.0359 14.4764L40.0359 9.94643C39.8103 9.60672 39.3476 9.48843 38.9912 9.69343L35.5804 11.6115C34.3497 10.6646 32.9818 9.91602 31.5184 9.41253L30.9794 5.65846C30.9214 5.25735 30.5855 4.95874 30.193 4.95874H17.807C17.4145 4.95874 17.0786 5.25735 17.0206 5.65846L16.4816 9.41253C15.0182 9.91602 13.6503 10.6646 12.4196 11.6115L9.00876 9.69343C8.65243 9.48843 8.1897 9.60672 7.9641 9.94643L4.9641 14.4764C4.73849 14.816 4.79584 15.321 5.09131 15.5732L8.22182 18.2957Z"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
-        <h1>专注云端直链的超级剪贴板</h1>
-        <p>
-          支持直链/文件的超级剪贴板  支持直链访问/普通访问 支持设置长期访问token。
-        </p>
+        <h1>{t("hero.title")}</h1>
+        <p>{t("hero.subtitle")}</p>
       </header>
 
       <main className="container">
         <section className="card">
           <div className="card__header">
             <div>
-              <h2>创建云端剪贴板</h2>
-              <p className="muted">
-                录入文本或上传最多 50MB 的文件，生成短码 / 持久 Token 并设置自动销毁。
-              </p>
+              <h2>{t("create.title")}</h2>
+              <p className="muted">{t("create.description")}</p>
             </div>
             <div className="card__actions">
               <button
@@ -692,11 +697,13 @@ const App = () => {
                 disabled={isImportingClipboard || type !== "text"}
                 title={
                   type === "text"
-                    ? "读取系统剪贴板内容"
-                    : "切换到文本类型以导入系统剪贴板"
+                    ? t("tooltip.importClipboard")
+                    : t("tooltip.switchToText")
                 }
               >
-                {isImportingClipboard ? "读取中..." : "导入系统剪贴板"}
+                {isImportingClipboard
+                  ? t("buttons.importingClipboard")
+                  : t("buttons.importClipboard")}
               </button>
             </div>
           </div>
@@ -705,38 +712,38 @@ const App = () => {
             <div className="remote-form__split">
               <div className="stack">
                 <div className="field field--horizontal">
-                  <span className="field__label">内容类型</span>
+                  <span className="field__label">{t("form.contentType")}</span>
                   <div className="pill-group">
                     <button
                       type="button"
                       className={`pill ${type === "text" ? "pill--active" : ""}`}
                       onClick={() => setType("text")}
                     >
-                      文本片段
+                      {t("form.textType")}
                     </button>
                     <button
                       type="button"
                       className={`pill ${type === "file" ? "pill--active" : ""}`}
                       onClick={() => setType("file")}
                     >
-                      文件上传
+                      {t("form.fileType")}
                     </button>
                   </div>
                 </div>
 
                 {type === "text" ? (
                   <label className="field">
-                    <span className="field__label">文本内容</span>
+                    <span className="field__label">{t("form.textLabel")}</span>
                     <textarea
                       value={textContent}
                       onChange={(event) => setTextContent(event.target.value)}
-                      placeholder="将需要分享的文本粘贴到这里。"
+                      placeholder={t("form.textPlaceholder")}
                       rows={6}
                     />
                   </label>
                 ) : (
                   <label className="field">
-                    <span className="field__label">文件</span>
+                    <span className="field__label">{t("form.fileLabel")}</span>
                     <input type="file" onChange={handleFileSelect} accept="*" />
                     {selectedFile ? (
                       <div className="file-preview">
@@ -745,11 +752,11 @@ const App = () => {
                         </span>
                         <span className="file-preview__meta">
                           {formatBytes(selectedFile.size)} ·{" "}
-                          {selectedFile.type || "未知类型"}
+                          {selectedFile.type || t("form.unknownType")}
                         </span>
                       </div>
                     ) : (
-                      <p className="muted">支持任意类型，大小不超过 50MB。</p>
+                      <p className="muted">{t("form.fileSupport")}</p>
                     )}
                   </label>
                 )}
@@ -757,7 +764,7 @@ const App = () => {
 
               <div className="stack">
                 <label className="field">
-                  <span className="field__label">自动销毁时间（小时）</span>
+                  <span className="field__label">{t("form.expiryHoursLabel")}</span>
                   <input
                     type="number"
                     min={MIN_EXPIRY_HOURS}
@@ -766,12 +773,15 @@ const App = () => {
                     onChange={(event) => setExpiresInHours(Number(event.target.value))}
                   />
                   <span className="field__hint">
-                    {MIN_EXPIRY_HOURS}-{MAX_EXPIRY_HOURS} 小时，到期自动清理。
+                    {t("form.expiryHint", {
+                      min: MIN_EXPIRY_HOURS,
+                      max: MAX_EXPIRY_HOURS
+                    })}
                   </span>
                 </label>
 
                 <label className="field">
-                  <span className="field__label">访问次数上限</span>
+                  <span className="field__label">{t("form.maxDownloadsLabel")}</span>
                   <input
                     type="number"
                     min={1}
@@ -792,17 +802,17 @@ const App = () => {
                         className="btn btn--tiny"
                         onClick={() => setMaxDownloads(option)}
                       >
-                        {option} 次
+                        {t("form.maxDownloadsOption", { value: option })}
                       </button>
                     ))}
                   </div>
                   <span className="field__hint">
-                    默认 {DEFAULT_MAX_DOWNLOADS} 次，达到次数后自动销毁。
+                    {t("form.maxDownloadsHint", { value: DEFAULT_MAX_DOWNLOADS })}
                   </span>
                 </label>
 
                 <fieldset className="field field--group">
-                  <legend className="field__label">访问凭证</legend>
+                  <legend className="field__label">{t("form.accessCredential")}</legend>
                   <label className="radio">
                     <input
                       type="radio"
@@ -812,7 +822,7 @@ const App = () => {
                       onChange={() => setAccessMode("code")}
                     />
                     <div className="radio__content">
-                      <span>使用 5 位直链码</span>
+                      <span>{t("form.accessWithCode")}</span>
                       <div className="radio__inline">
                         <strong className="code">{shortCode}</strong>
                         <button
@@ -821,7 +831,7 @@ const App = () => {
                           onClick={() => setShortCode(generateAccessCode())}
                           disabled={accessMode !== "code"}
                         >
-                          刷新
+                          {t("buttons.refresh")}
                         </button>
                       </div>
                     </div>
@@ -839,15 +849,13 @@ const App = () => {
                       disabled={!settings.persistentToken}
                     />
                     <div className="radio__content">
-                      <span>使用持久 Token</span>
+                      <span>{t("form.accessWithToken")}</span>
                       {settings.persistentToken ? (
                         <span className="code code--inline">
                           {settings.persistentToken}
                         </span>
                       ) : (
-                        <span className="muted small">
-                          请先配置持久 Token
-                        </span>
+                        <span className="muted small">{t("form.tokenMissing")}</span>
                       )}
                       {settings.persistentToken && tokenExpiryNotice ? (
                         <span className="settings-meta">{tokenExpiryNotice}</span>
@@ -862,7 +870,7 @@ const App = () => {
                   onClick={handleCreateRemoteClip}
                   disabled={isCreatingClip}
                 >
-                  {isCreatingClip ? "创建中..." : "创建云端剪贴板"}
+                  {isCreatingClip ? t("buttons.creating") : t("buttons.create")}
                 </button>
               </div>
             </div>
@@ -872,14 +880,8 @@ const App = () => {
         <section className="card">
           <div className="card__header">
             <div>
-              <h2>云端剪贴板列表</h2>
-              <p className="muted">
-                {remoteClips.length
-                  ? hasActiveClips
-                    ? `共有 ${remoteClips.length} 个项目，过期后自动销毁。`
-                    : "全部项目均已过期或销毁。"
-                  : "尚未创建云端剪贴板。"}
-              </p>
+              <h2>{t("list.title")}</h2>
+              <p className="muted">{listSummary}</p>
             </div>
           </div>
 
@@ -900,15 +902,25 @@ const App = () => {
                 : "badge--ok";
               const badgeLabel = inactive
                 ? consumed
-                  ? "已达上限"
-                  : "已过期"
-                : `剩余 ${formatRemaining(clip, now)}`;
+                  ? t("list.badge.limitReached")
+                  : t("list.badge.expired")
+                : t("list.badge.remaining", {
+                    duration: formatRemaining(clip.expiresAt - now)
+                  });
               const directAccessUrl =
                 clip.directUrl ??
                 (clip.accessCode ? buildRelativeAccessPath(clip.accessCode) : "");
               const tokenAccessUrl = clip.accessToken
                 ? buildRelativeAccessPath(clip.accessToken)
                 : "";
+              const clipTypeLabel =
+                clip.type === "text"
+                  ? t("list.clipType.text")
+                  : t("list.clipType.file");
+              const clipMeta = t("list.clipMeta", {
+                created: formatDateTime(clip.createdAt),
+                type: clipTypeLabel
+              });
               return (
                 <article
                   key={clip.id}
@@ -916,11 +928,8 @@ const App = () => {
                 >
                   <header className="remote-card__header">
                     <div>
-                      <h4>{clipTitle(clip)}</h4>
-                      <span className="muted small">
-                        {formatTimestamp(clip.createdAt)} 创建 ·{" "}
-                        {clip.type === "text" ? "文本片段" : "文件片段"}
-                      </span>
+                      <h4>{getClipTitle(clip)}</h4>
+                      <span className="muted small">{clipMeta}</span>
                     </div>
                     <span className={`badge ${badgeTone}`}>{badgeLabel}</span>
                   </header>
@@ -937,14 +946,17 @@ const App = () => {
                         </span>
                         <span className="file-preview__meta">
                           {formatBytes(clip.payload.file.size)} ·{" "}
-                          {clip.payload.file.type || "未知类型"}
+                          {clip.payload.file.type || t("form.unknownType")}
                         </span>
                         <span className="file-preview__meta">
-                          下载次数：{clip.downloadCount} / {clip.maxDownloads}
+                          {t("list.fileMeta.downloads", {
+                            count: clip.downloadCount,
+                            max: clip.maxDownloads
+                          })}
                         </span>
                       </div>
                     ) : (
-                      <span className="muted">文件数据不可用，请重新上传。</span>
+                      <span className="muted">{t("list.fileUnavailable")}</span>
                     )}
                   </div>
 
@@ -955,10 +967,10 @@ const App = () => {
                           type="button"
                           className="badge badge--ghost"
                           onClick={() =>
-                            handleCopyAccess(directAccessUrl, "访问直链")
+                            handleCopyAccess(directAccessUrl, "direct-link")
                           }
                         >
-                          直链码：{clip.accessCode}
+                          {t("list.codeLabel", { code: clip.accessCode })}
                         </button>
                       ) : null}
                       {clip.accessToken ? (
@@ -968,15 +980,17 @@ const App = () => {
                           onClick={() =>
                             handleCopyAccess(
                               tokenAccessUrl || buildRelativeAccessPath(clip.accessToken ?? ""),
-                              "访问直链"
+                              "direct-link"
                             )
                           }
                         >
-                          Token：{clip.accessToken}
+                          {t("list.tokenLabel", { token: clip.accessToken })}
                         </button>
                       ) : null}
                       <span className="muted small">
-                        剩余访问次数：{remainingDownloads}
+                        {t("list.remainingDownloads", {
+                          count: remainingDownloads
+                        })}
                       </span>
                     </div>
                     <div className="remote-card__actions">
@@ -987,7 +1001,7 @@ const App = () => {
                           onClick={() => handleCopyRemoteText(clip)}
                           disabled={inactive}
                         >
-                          复制文本
+                          {t("buttons.copyText")}
                         </button>
                       ) : (
                         <button
@@ -996,7 +1010,7 @@ const App = () => {
                           onClick={() => handleDownloadFile(clip)}
                           disabled={inactive}
                         >
-                          下载文件
+                          {t("buttons.downloadFile")}
                         </button>
                       )}
                       <button
@@ -1004,7 +1018,7 @@ const App = () => {
                         className="btn btn--tiny btn--danger"
                         onClick={() => void handleRemoveRemoteClip(clip.id)}
                       >
-                        删除
+                        {t("buttons.delete")}
                       </button>
                     </div>
                   </footer>
@@ -1021,39 +1035,37 @@ const App = () => {
           <div className="modal__content">
             <header className="modal__header">
               <div>
-                <h3>环境设置</h3>
-                <p className="muted small">
-                  配置持久 Token，创建片段时自动复用。
-                </p>
+                <h3>{t("modal.title")}</h3>
+                <p className="muted small">{t("modal.description")}</p>
               </div>
               <button
                 type="button"
                 className="btn btn--ghost btn--tiny"
                 onClick={handleCloseSettings}
               >
-                关闭
+                {t("buttons.close")}
               </button>
             </header>
 
             <div className="stack">
               <label className="field">
-                <span className="field__label">持久 Token</span>
+                <span className="field__label">{t("modal.tokenLabel")}</span>
                 <div className="field field--compact">
                   <input
                     value={settingsTokenDraft}
                     onChange={(event) => setSettingsTokenDraft(event.target.value)}
-                    placeholder="至少 7 位，推荐混合字母数字"
+                    placeholder={t("modal.tokenPlaceholder")}
                   />
                   <button
                     type="button"
                     className="btn btn--tiny"
                     onClick={handleGeneratePersistentToken}
                   >
-                    自动生成
+                    {t("buttons.generateToken")}
                   </button>
                 </div>
                 <span className="field__hint">
-                  云端剪贴板可复用该 Token 进行持久访问，720 小时未使用会自动销毁。
+                  {t("modal.tokenHint")}
                 </span>
               </label>
               {tokenLastActivityLabel ? (
@@ -1070,7 +1082,7 @@ const App = () => {
                 className="btn btn--secondary"
                 onClick={handleSaveSettings}
               >
-                保存设置
+                {t("buttons.saveSettings")}
               </button>
             </div>
           </div>
