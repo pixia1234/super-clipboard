@@ -60,20 +60,16 @@ pytest backend/tests
 ## 🐳 Docker 部署
 
 ```bash
-# 构建镜像（默认标签为 latest，可根据需要自定义仓库名）
-docker build -t your-registry/super-clipboard:latest .
-
-# 直接运行（持久化存储挂载到 clipboard-data 卷）
+# 直接运行官方镜像（持久化存储挂载到 clipboard-data 卷）
 docker run -d --name super-clipboard \
   -p 5173:5173 \
   -v clipboard-data:/app/backend/storage \
-  your-registry/super-clipboard:latest
+  pixia1234/super-clipboard:latest
 
 # 或使用 compose（默认监听 5173）
+docker compose pull
 docker compose up -d
 ```
-
-> 推送到私有/公有仓库时，先执行 `docker tag your-registry/super-clipboard:latest registry.example.com/super-clipboard:latest`，然后 `docker push registry.example.com/super-clipboard:latest`。拉取后可直接 `docker pull … && docker run …` 或 `docker compose pull && docker compose up -d`。
 
 ### GitHub Actions 自动发布镜像
 
@@ -88,4 +84,9 @@ docker compose up -d
 - `DOCKERHUB_USERNAME`：Docker Hub 用户名或组织名
 - `DOCKERHUB_TOKEN`：对应账号的访问令牌（需具备 `write` 权限）
 
-配置完成后，GitHub Actions 会将镜像推送到 `docker.io/<DOCKERHUB_USERNAME>/super-clipboard:<tag>`，可直接 `docker pull` 获取最新构建。
+配置完成后，GitHub Actions 会将镜像推送到 `docker.io/<DOCKERHUB_USERNAME>/super-clipboard:<tag>`。使用官方镜像时，可直接：
+
+```bash
+docker pull pixia1234/super-clipboard:latest
+docker run -d -p 5173:5173 pixia1234/super-clipboard:latest
+```

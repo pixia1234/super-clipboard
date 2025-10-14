@@ -1,7 +1,6 @@
 services:
   super-clipboard:
-    build:
-      context: .
+    image: pixia1234/super-clipboard:latest
     ports:
       - "5173:5173"
     environment:
