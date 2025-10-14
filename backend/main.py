@@ -30,6 +30,9 @@ app.add_middleware(
 )
 if settings.static_root.exists():
     app.mount("/static", StaticFiles(directory=settings.static_root), name="static")
+    assets_dir = settings.static_root / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 _cleanup_task: Optional[asyncio.Task] = None
 
 
