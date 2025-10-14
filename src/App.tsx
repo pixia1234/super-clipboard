@@ -671,7 +671,7 @@ const App = () => {
         </div>
         <h1>专注云端直链的超级剪贴板</h1>
         <p>
-          面向 VNC、内网穿透与跨设备传输场景。生成短码或持久 Token，即可按时限访问文本与文件。
+          支持直链/文件的超级剪贴板  支持直链访问/普通访问 支持设置长期访问token。
         </p>
       </header>
 
@@ -906,6 +906,9 @@ const App = () => {
               const directAccessUrl =
                 clip.directUrl ??
                 (clip.accessCode ? buildRelativeAccessPath(clip.accessCode) : "");
+              const tokenAccessUrl = clip.accessToken
+                ? buildRelativeAccessPath(clip.accessToken)
+                : "";
               return (
                 <article
                   key={clip.id}
@@ -963,7 +966,10 @@ const App = () => {
                           type="button"
                           className="badge badge--ghost"
                           onClick={() =>
-                            handleCopyAccess(clip.accessToken ?? "", "Token")
+                            handleCopyAccess(
+                              tokenAccessUrl || buildRelativeAccessPath(clip.accessToken ?? ""),
+                              "访问直链"
+                            )
                           }
                         >
                           Token：{clip.accessToken}
