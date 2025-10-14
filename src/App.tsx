@@ -14,6 +14,18 @@ import {
 } from "./utils/generators";
 import "./App.css";
 
+const buildRelativeAccessPath = (accessCode: string): string => {
+  const trimmed = accessCode.trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (typeof window === "undefined") {
+    return `/${trimmed}`;
+  }
+  const target = new URL(`./${trimmed}`, window.location.href);
+  return `${window.location.host}${target.pathname}`;
+};
+
 type ToastState = {
   kind: "success" | "error" | "info";
   message: string;
@@ -415,7 +427,10 @@ const App = () => {
     resetForm();
   };
 
-  const handleCopyAccess = async (value: string, kind: "短码" | "Token") => {
+  const handleCopyAccess = async (
+    value: string,
+    kind: "访问直链" | "Token"
+  ) => {
     if (!value) {
       setToast({
         kind: "error",
@@ -804,7 +819,10 @@ const App = () => {
                           type="button"
                           className="badge badge--ghost"
                           onClick={() =>
-                            handleCopyAccess(clip.accessCode ?? "", "短码")
+                            handleCopyAccess(
+                              buildRelativeAccessPath(clip.accessCode ?? ""),
+                              "访问直链"
+                            )
                           }
                         >
                           直链码：{clip.accessCode}
