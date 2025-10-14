@@ -70,23 +70,3 @@ docker run -d --name super-clipboard \
 docker compose pull
 docker compose up -d
 ```
-
-### GitHub Actions 自动发布镜像
-
-仓库已内置 `.github/workflows/docker.yml`，在以下场景自动构建并推送镜像：
-
-- 推送到 `main` 分支
-- 发布 Release（`published`）
-- 手动 `workflow_dispatch`
-
-在 GitHub 仓库中配置两个 Secrets：
-
-- `DOCKERHUB_USERNAME`：Docker Hub 用户名或组织名
-- `DOCKERHUB_TOKEN`：对应账号的访问令牌（需具备 `write` 权限）
-
-配置完成后，GitHub Actions 会将镜像推送到 `docker.io/<DOCKERHUB_USERNAME>/super-clipboard:<tag>`。使用官方镜像时，可直接：
-
-```bash
-docker pull pixia1234/super-clipboard:latest
-docker run -d -p 5173:5173 pixia1234/super-clipboard:latest
-```
