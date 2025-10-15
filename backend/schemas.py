@@ -29,8 +29,7 @@ class ClipCreateRequest(BaseModel):
     maxDownloads: Optional[int] = Field(default=None, gt=0)
     accessCode: Optional[str] = Field(default=None, min_length=5, max_length=12)
     accessToken: Optional[str] = Field(default=None, min_length=7)
-    accessTokenOwner: Optional[str] = Field(default=None, min_length=1, max_length=64)
-    ownerId: str = Field(min_length=1, max_length=64)
+    environmentId: str = Field(min_length=1, max_length=64)
     payload: ClipPayloadInput
 
     @field_validator("accessCode")
@@ -52,16 +51,6 @@ class ClipCreateRequest(BaseModel):
             return value
         return value.strip()
 
-    @field_validator("accessTokenOwner")
-    @classmethod
-    def ensure_access_token_owner(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return value
-        trimmed = value.strip()
-        if not trimmed:
-            return None
-        return trimmed
-
     @model_validator(mode="after")
     def validate_payload(self) -> "ClipCreateRequest":
         if self.type == "text":
@@ -74,11 +63,10 @@ class ClipCreateRequest(BaseModel):
                 raise ValueError("文件片段需要 file 数据")
             if self.payload.text is not None:
                 raise ValueError("文件片段不应包含文本字段")
-        if self.accessToken:
-            if not self.accessTokenOwner:
-                raise ValueError("持久 Token 校验失败，请重新保存")
-        if not self.ownerId.strip():
-            raise ValueError("ownerId 缺失")
+        if self.accessToken and not self.environmentId.strip():
+            raise ValueError("持久 Token 校验失败，请重新保存")
+        if not self.environmentId.strip():
+            raise ValueError("environmentId 缺失")
         return self
 
 
@@ -103,8 +91,6 @@ class ClipResponse(BaseModel):
     downloadCount: int
     accessCode: Optional[str]
     accessToken: Optional[str]
-    ownerId: str
-    accessTokenOwner: Optional[str]
     payload: ClipPayloadResponse
     directUrl: Optional[str]
 
@@ -116,13 +102,11 @@ class ClipResponse(BaseModel):
                 name=clip.stored_file.name,
                 size=clip.stored_file.size,
                 type=clip.stored_file.mime,
-                downloadUrl=f"{base_url}/api/clips/{clip.id}/file?ownerId={clip.owner_id}"
+                downloadUrl=f"{base_url}/api/clips/{clip.id}/file?environmentId={clip.environment_id}"
             )
-        direct_url = None
-        if clip.access_code:
-            direct_url = f"{base_url}/{clip.owner_id}.{clip.access_code}"
-        elif clip.access_token:
-            direct_url = f"{base_url}/{clip.owner_id}.{clip.access_token}"
+        direct_url = (
+            f"{base_url}/{clip.access_code}" if clip.access_code else None
+        )
         return ClipResponse(
             id=UUID(clip.id),
             type=clip.type,
@@ -132,8 +116,6 @@ class ClipResponse(BaseModel):
             downloadCount=clip.download_count,
             accessCode=clip.access_code,
             accessToken=clip.access_token,
-            ownerId=clip.owner_id,
-            accessTokenOwner=clip.owner_id if clip.access_token else None,
             payload=ClipPayloadResponse(text=clip.text, file=file_payload),
             directUrl=direct_url
         )
@@ -154,7 +136,7 @@ class IncrementResponse(BaseModel):
 
 class TokenRegisterRequest(BaseModel):
     token: str = Field(min_length=7)
-    ownerId: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    environmentId: Optional[str] = Field(default=None, min_length=1, max_length=64)
 
     @field_validator("token")
     @classmethod
@@ -164,7 +146,7 @@ class TokenRegisterRequest(BaseModel):
             raise ValueError("持久 Token 无效")
         return trimmed
 
-    @field_validator("ownerId")
+    @field_validator("environmentId")
     @classmethod
     def ensure_owner(cls, value: Optional[str]) -> Optional[str]:
         if value is None:
@@ -177,7 +159,7 @@ class TokenRegisterRequest(BaseModel):
 
 class TokenRegisterResponse(BaseModel):
     token: str
-    ownerId: str
+    environmentId: str
     updatedAt: int
     lastUsedAt: Optional[int]
     expiresAt: int

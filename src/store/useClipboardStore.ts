@@ -57,8 +57,6 @@ export type RemoteClip = {
   downloadCount: number;
   accessCode?: string | null;
   accessToken?: string | null;
-  accessTokenOwner?: string | null;
-  ownerId: string;
   payload: RemoteClipPayload;
   directUrl?: string | null;
 };
@@ -67,7 +65,6 @@ export type ClipboardSettings = {
   persistentToken: string;
   tokenUpdatedAt: number | null;
   tokenLastUsedAt: number | null;
-  tokenOwnerId: string | null;
   environmentId: string;
 };
 
@@ -110,7 +107,6 @@ export const useClipboardStore = create<ClipboardStore>((set) => ({
     persistentToken: "",
     tokenUpdatedAt: null,
     tokenLastUsedAt: null,
-    tokenOwnerId: null,
     environmentId: generateUuid()
   },
   updateSettings: (changes) =>

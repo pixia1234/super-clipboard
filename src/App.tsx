@@ -22,17 +22,15 @@ import "./App.css";
 import { useI18n } from "./i18n/I18nProvider";
 import type { Locale } from "./i18n/locales";
 
-const buildDirectLink = (ownerId: string, identifier: string): string => {
-  const owner = ownerId.trim();
-  const value = identifier.trim();
-  if (!owner || !value) {
+const buildRelativeAccessPath = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) {
     return "";
   }
-  const path = `${owner}.${value}`;
   if (typeof window === "undefined") {
-    return `/${path}`;
+    return `/${trimmed}`;
   }
-  const target = new URL(`./${path}`, window.location.href);
+  const target = new URL(`./${trimmed}`, window.location.href);
   return target.toString();
 };
 
@@ -106,7 +104,6 @@ const App = () => {
           persistentToken: unknown;
           tokenUpdatedAt: unknown;
           tokenLastUsedAt: unknown;
-          tokenOwnerId: unknown;
           environmentId: unknown;
         }>;
         const sanitized = {
@@ -116,7 +113,6 @@ const App = () => {
             typeof parsed.tokenUpdatedAt === "number" ? parsed.tokenUpdatedAt : null,
           tokenLastUsedAt:
             typeof parsed.tokenLastUsedAt === "number" ? parsed.tokenLastUsedAt : null,
-          tokenOwnerId: typeof parsed.tokenOwnerId === "string" ? parsed.tokenOwnerId : null,
           environmentId:
             typeof parsed.environmentId === "string" && parsed.environmentId
               ? parsed.environmentId
@@ -192,7 +188,6 @@ const App = () => {
         persistentToken: "",
         tokenUpdatedAt: null,
         tokenLastUsedAt: null,
-        tokenOwnerId: null
       });
       setAccessMode("code");
       setSettingsTokenDraft("");
@@ -343,7 +338,7 @@ const App = () => {
         return;
       }
 
-      if (!settings.tokenOwnerId) {
+      if (!settings.environmentId) {
         setToast({
           kind: "info",
           message: t("toast.tokenRequired")
@@ -358,7 +353,6 @@ const App = () => {
           persistentToken: "",
           tokenUpdatedAt: null,
           tokenLastUsedAt: null,
-          tokenOwnerId: null
         });
         setAccessMode("code");
         setSettingsTokenDraft("");
@@ -392,10 +386,9 @@ const App = () => {
         type,
         expiresAt: Date.now() + hoursToMilliseconds(expiresInHours),
         maxDownloads,
-        ownerId: settings.environmentId,
+        environmentId: settings.environmentId,
         accessCode: accessMode === "code" ? activeShortCode : undefined,
         accessToken: usingToken ? tokenValue : undefined,
-        accessTokenOwner: usingToken ? settings.tokenOwnerId ?? undefined : undefined,
         payload:
           type === "text"
             ? { text: trimmedText }
@@ -563,7 +556,6 @@ const App = () => {
         persistentToken: "",
         tokenUpdatedAt: null,
         tokenLastUsedAt: null,
-        tokenOwnerId: null
       });
       setAccessMode("code");
       setSettingsTokenDraft("");
@@ -578,13 +570,13 @@ const App = () => {
     try {
       const registration = await registerPersistentToken(
         trimmedToken,
-        settings.tokenOwnerId ?? settings.environmentId
+        settings.environmentId
       );
       updateSettings({
         persistentToken: trimmedToken,
         tokenUpdatedAt: registration.updatedAt,
         tokenLastUsedAt: registration.lastUsedAt ?? null,
-        tokenOwnerId: registration.ownerId
+        environmentId: registration.environmentId || settings.environmentId
       });
       setSettingsTokenDraft(trimmedToken);
       setToast({
@@ -927,10 +919,10 @@ const App = () => {
                     duration: formatRemaining(clip.expiresAt - now)
                   });
               const directAccessUrl = clip.accessCode
-                ? clip.directUrl ?? buildDirectLink(clip.ownerId, clip.accessCode)
+                ? clip.directUrl ?? buildRelativeAccessPath(clip.accessCode)
                 : "";
               const tokenAccessUrl = clip.accessToken
-                ? clip.directUrl ?? buildDirectLink(clip.ownerId, clip.accessToken)
+                ? buildRelativeAccessPath(clip.accessToken)
                 : "";
               const clipTypeLabel =
                 clip.type === "text"

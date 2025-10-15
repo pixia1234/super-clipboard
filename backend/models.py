@@ -24,7 +24,7 @@ class Clip:
     download_count: int
     access_code: Optional[str]
     access_token: Optional[str]
-    owner_id: str
+    environment_id: str
     text: Optional[str]
     stored_file: Optional[StoredFile]
 

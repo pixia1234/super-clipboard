@@ -67,7 +67,7 @@ class ClipRepository:
     def _token_ttl_seconds(self) -> int:
         return max(1, settings.token_expiry_hours) * 60 * 60
 
-    def register_token(self, token: str, owner_id: Optional[str]) -> dict[str, object]:
+    def register_token(self, token: str, environment_id: Optional[str]) -> dict[str, object]:
         trimmed = token.strip()
         if not trimmed:
             raise ValueError("持久 Token 无效")
@@ -82,7 +82,7 @@ class ClipRepository:
             ).fetchone()
             if row:
                 if row["expires_at"] <= now:
-                    assigned_owner = owner_id if owner_id and owner_id == row["owner_id"] else str(uuid4())
+                    assigned_owner = environment_id if environment_id and environment_id == row["owner_id"] else str(uuid4())
                     conn.execute(
                         "UPDATE tokens SET owner_id = ?, updated_at = ?, last_used_at = NULL, expires_at = ? WHERE token = ?",
                         (assigned_owner, now, expires_at, trimmed)
@@ -90,7 +90,7 @@ class ClipRepository:
                     last_used_at_value = None
                 else:
                     existing_owner = row["owner_id"]
-                    if owner_id and owner_id == existing_owner:
+                    if environment_id and environment_id == existing_owner:
                         conn.execute(
                             "UPDATE tokens SET updated_at = ?, expires_at = ? WHERE token = ?",
                             (now, expires_at, trimmed)
@@ -100,7 +100,7 @@ class ClipRepository:
                     else:
                         raise ValueError("持久 Token 已被其他设备占用，请稍后重试")
             else:
-                assigned_owner = owner_id if owner_id else str(uuid4())
+                assigned_owner = environment_id if environment_id else str(uuid4())
                 conn.execute(
                     "INSERT INTO tokens (token, owner_id, updated_at, last_used_at, expires_at) VALUES (?, ?, ?, NULL, ?)",
                     (trimmed, assigned_owner, now, expires_at)
@@ -108,18 +108,18 @@ class ClipRepository:
                 last_used_at_value = None
         return {
             "token": trimmed,
-            "owner_id": assigned_owner,
+            "environment_id": assigned_owner,
             "updated_at": now,
             "last_used_at": last_used_at_value,
             "expires_at": expires_at,
         }
 
-    def ensure_token_owner(self, token: str, owner_id: str) -> dict[str, object]:
+    def ensure_token_owner(self, token: str, environment_id: str) -> dict[str, object]:
         trimmed = token.strip()
         if not trimmed:
             raise ValueError("持久 Token 无效")
-        normalized_owner = owner_id.strip()
-        if not normalized_owner:
+        normalized_env = environment_id.strip()
+        if not normalized_env:
             raise ValueError("Token 校验失败")
         now = int(datetime.now(tz=timezone.utc).timestamp())
         ttl_seconds = self._token_ttl_seconds()
@@ -134,7 +134,7 @@ class ClipRepository:
             if row["expires_at"] <= now:
                 conn.execute("DELETE FROM tokens WHERE token = ?", (trimmed,))
                 raise ValueError("持久 Token 已过期，请重新生成")
-            if row["owner_id"] != normalized_owner:
+            if row["owner_id"] != normalized_env:
                 raise ValueError("持久 Token 已被其他设备占用，请稍后重试")
             conn.execute(
                 "UPDATE tokens SET last_used_at = ?, expires_at = ? WHERE token = ?",
@@ -142,7 +142,7 @@ class ClipRepository:
             )
         return {
             "token": trimmed,
-            "owner_id": normalized_owner,
+            "environment_id": normalized_env,
             "updated_at": row["updated_at"],
             "last_used_at": now,
             "expires_at": new_expires,
@@ -168,7 +168,7 @@ class ClipRepository:
             download_count=row["download_count"],
             access_code=row["access_code"],
             access_token=row["access_token"],
-            owner_id=owner_id,
+            environment_id=owner_id,
             text=row["text_content"],
             stored_file=stored_file
         )
@@ -186,8 +186,7 @@ class ClipRepository:
         max_downloads: Optional[int],
         access_code: Optional[str],
         access_token: Optional[str],
-        access_token_owner: Optional[str],
-        owner_id: str,
+        environment_id: str,
         text: Optional[str],
         stored_file: Optional[StoredFile]
     ) -> Clip:
@@ -195,15 +194,9 @@ class ClipRepository:
         if expires_at <= datetime.now(tz=timezone.utc):
             raise ValueError("过期时间必须晚于当前时间")
 
-        owner_id_value = owner_id.strip()
-        if not owner_id_value:
+        environment_id_value = environment_id.strip()
+        if not environment_id_value:
             raise ValueError("剪贴板所属标识缺失")
-
-        if access_token:
-            token_owner = access_token_owner.strip() if access_token_owner else owner_id_value
-            record = self.ensure_token_owner(access_token, token_owner)
-            owner_id_value = record["owner_id"]
-
         with self._lock, self._connection() as conn:
             if access_code:
                 existing = conn.execute(
@@ -231,7 +224,7 @@ class ClipRepository:
                     self.sanitize_max_downloads(max_downloads),
                     access_code,
                     access_token,
-                    owner_id_value,
+                    environment_id_value,
                     text,
                     stored_file.name if stored_file else None,
                     str(stored_file.path) if stored_file else None,
@@ -245,19 +238,27 @@ class ClipRepository:
             ).fetchone()
         return self._row_to_clip(row)
 
-    def list_clips(self, owner_id: str) -> list[Clip]:
+    def list_clips(self, environment_id: str) -> list[Clip]:
         with self._connection() as conn:
             rows = conn.execute(
                 "SELECT * FROM clips WHERE owner_id = ? ORDER BY created_at DESC",
-                (owner_id,)
+                (environment_id,)
             ).fetchall()
         return [self._row_to_clip(row) for row in rows]
 
-    def get_clip_by_code_and_owner(self, access_code: str, owner_id: str) -> Optional[Clip]:
+    def get_clip_by_code(self, access_code: str) -> Optional[Clip]:
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM clips WHERE access_code = ?",
+                (access_code,)
+            ).fetchone()
+        return self._row_to_clip(row) if row else None
+
+    def get_clip_by_code_and_owner(self, access_code: str, environment_id: str) -> Optional[Clip]:
         with self._connection() as conn:
             row = conn.execute(
                 "SELECT * FROM clips WHERE access_code = ? AND owner_id = ?",
-                (access_code, owner_id)
+                (access_code, environment_id)
             ).fetchone()
         return self._row_to_clip(row) if row else None
 
@@ -269,12 +270,12 @@ class ClipRepository:
             ).fetchone()
         return self._row_to_clip(row) if row else None
 
-    def get_clip_by_token(self, access_token: str, owner_id: Optional[str] = None) -> Optional[Clip]:
+    def get_clip_by_token(self, access_token: str, environment_id: Optional[str] = None) -> Optional[Clip]:
         with self._connection() as conn:
-            if owner_id:
+            if environment_id:
                 row = conn.execute(
                     "SELECT * FROM clips WHERE access_token = ? AND owner_id = ? ORDER BY created_at DESC",
-                    (access_token, owner_id)
+                    (access_token, environment_id)
                 ).fetchone()
             else:
                 row = conn.execute(
@@ -283,16 +284,16 @@ class ClipRepository:
                 ).fetchone()
         return self._row_to_clip(row) if row else None
 
-    def delete_clip(self, clip_id: str, owner_id: str) -> bool:
-        normalized_owner = owner_id.strip()
-        if not normalized_owner:
+    def delete_clip(self, clip_id: str, environment_id: str) -> bool:
+        normalized_env = environment_id.strip()
+        if not normalized_env:
             return False
         with self._lock, self._connection() as conn:
             row = conn.execute(
                 "SELECT file_path, owner_id FROM clips WHERE id = ?",
                 (clip_id,)
             ).fetchone()
-            if not row or row["owner_id"] != normalized_owner:
+            if not row or row["owner_id"] != normalized_env:
                 return False
             file_path = row["file_path"]
             conn.execute("DELETE FROM clips WHERE id = ?", (clip_id,))
@@ -300,7 +301,10 @@ class ClipRepository:
             Path(file_path).unlink(missing_ok=True)
         return True
 
-    def increment_downloads(self, clip_id: str, owner_id: str) -> tuple[Optional[Clip], bool]:
+    def increment_downloads(self, clip_id: str, environment_id: str) -> tuple[Optional[Clip], bool]:
+        normalized_env = environment_id.strip()
+        if not normalized_env:
+            return None, False
         with self._lock, self._connection() as conn:
             row = conn.execute(
                 "SELECT * FROM clips WHERE id = ?",
@@ -309,7 +313,7 @@ class ClipRepository:
             if not row:
                 return None, False
             clip = self._row_to_clip(row)
-            if clip.owner_id != owner_id:
+            if clip.environment_id != normalized_env:
                 return None, False
             new_count = clip.download_count + 1
             conn.execute(
