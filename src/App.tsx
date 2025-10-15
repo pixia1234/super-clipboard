@@ -15,22 +15,25 @@ import {
   listRemoteClips,
   createRemoteClip,
   deleteRemoteClip,
-  fetchRemoteClip
+  fetchRemoteClip,
+  registerPersistentToken
 } from "./utils/api";
 import "./App.css";
 import { useI18n } from "./i18n/I18nProvider";
 import type { Locale } from "./i18n/locales";
 
-const buildRelativeAccessPath = (accessCode: string): string => {
-  const trimmed = accessCode.trim();
-  if (!trimmed) {
+const buildDirectLink = (ownerId: string, identifier: string): string => {
+  const owner = ownerId.trim();
+  const value = identifier.trim();
+  if (!owner || !value) {
     return "";
   }
+  const path = `${owner}.${value}`;
   if (typeof window === "undefined") {
-    return `/${trimmed}`;
+    return `/${path}`;
   }
-  const target = new URL(`./${trimmed}`, window.location.href);
-  return `${window.location.host}${target.pathname}`;
+  const target = new URL(`./${path}`, window.location.href);
+  return target.toString();
 };
 
 type ToastState = {
@@ -131,8 +134,11 @@ const App = () => {
     let cancelled = false;
 
     const loadRemoteClips = async () => {
+      if (!settings.environmentId) {
+        return;
+      }
       try {
-        const clips = await listRemoteClips();
+        const clips = await listRemoteClips(settings.environmentId);
         if (!cancelled) {
           setRemoteClips(clips);
         }
@@ -150,7 +156,7 @@ const App = () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [setRemoteClips]);
+  }, [setRemoteClips, settings.environmentId, t]);
 
   useEffect(() => {
     window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
@@ -337,6 +343,15 @@ const App = () => {
         return;
       }
 
+      if (!settings.tokenOwnerId) {
+        setToast({
+          kind: "info",
+          message: t("toast.tokenRequired")
+        });
+        setAccessMode("code");
+        return;
+      }
+
       const reference = settings.tokenLastUsedAt ?? settings.tokenUpdatedAt;
       if (reference && nowTs - reference >= TOKEN_EXPIRY_MS) {
         updateSettings({
@@ -351,15 +366,6 @@ const App = () => {
           kind: "info",
           message: t("toast.tokenExpired")
         });
-        return;
-      }
-
-      if (settings.tokenOwnerId && settings.tokenOwnerId !== settings.environmentId) {
-        setToast({
-          kind: "error",
-          message: t("toast.tokenInUse")
-        });
-        setAccessMode("code");
         return;
       }
 
@@ -386,8 +392,10 @@ const App = () => {
         type,
         expiresAt: Date.now() + hoursToMilliseconds(expiresInHours),
         maxDownloads,
+        ownerId: settings.environmentId,
         accessCode: accessMode === "code" ? activeShortCode : undefined,
         accessToken: usingToken ? tokenValue : undefined,
+        accessTokenOwner: usingToken ? settings.tokenOwnerId ?? undefined : undefined,
         payload:
           type === "text"
             ? { text: trimmedText }
@@ -405,8 +413,6 @@ const App = () => {
 
       if (usingToken) {
         updateSettings({
-          tokenOwnerId: settings.tokenOwnerId ?? settings.environmentId,
-          tokenUpdatedAt: settings.tokenUpdatedAt ?? nowTs,
           tokenLastUsedAt: nowTs
         });
       }
@@ -449,7 +455,7 @@ const App = () => {
 
   const refreshRemoteClip = async (clipId: string) => {
     try {
-      const fresh = await fetchRemoteClip(clipId);
+      const fresh = await fetchRemoteClip(clipId, settings.environmentId);
       updateRemoteClip(clipId, fresh);
     } catch (error) {
       const message =
@@ -515,7 +521,7 @@ const App = () => {
 
   const handleRemoveRemoteClip = async (clipId: string) => {
     try {
-      await deleteRemoteClip(clipId);
+      await deleteRemoteClip(clipId, settings.environmentId);
       removeClipFromStore(clipId);
       setToast({
         kind: "info",
@@ -542,7 +548,7 @@ const App = () => {
     setSettingsTokenDraft(generateToken(20));
   };
 
-  const handleSaveSettings = () => {
+  const handleSaveSettings = async () => {
     const trimmedToken = settingsTokenDraft.trim();
     if (trimmedToken && trimmedToken.length < 7) {
       setToast({
@@ -552,36 +558,49 @@ const App = () => {
       return;
     }
 
-    const tokenChanged = settings.persistentToken !== trimmedToken;
-    const nextUpdatedAt = trimmedToken
-      ? tokenChanged
-        ? Date.now()
-        : settings.tokenUpdatedAt ?? Date.now()
-      : null;
-    const nextLastUsed = trimmedToken && !tokenChanged ? settings.tokenLastUsedAt : null;
-    const nextOwnerId = trimmedToken
-      ? tokenChanged
-        ? settings.environmentId
-        : settings.tokenOwnerId ?? settings.environmentId
-      : null;
-
-    updateSettings({
-      persistentToken: trimmedToken,
-      tokenUpdatedAt: nextUpdatedAt,
-      tokenLastUsedAt: nextLastUsed,
-      tokenOwnerId: nextOwnerId
-    });
-
     if (!trimmedToken) {
+      updateSettings({
+        persistentToken: "",
+        tokenUpdatedAt: null,
+        tokenLastUsedAt: null,
+        tokenOwnerId: null
+      });
       setAccessMode("code");
+      setSettingsTokenDraft("");
+      setToast({
+        kind: "success",
+        message: t("toast.settingsSaved")
+      });
+      setIsSettingsOpen(false);
+      return;
     }
 
-    setSettingsTokenDraft(trimmedToken);
-    setToast({
-      kind: "success",
-      message: t("toast.settingsSaved")
-    });
-    setIsSettingsOpen(false);
+    try {
+      const registration = await registerPersistentToken(
+        trimmedToken,
+        settings.tokenOwnerId ?? settings.environmentId
+      );
+      updateSettings({
+        persistentToken: trimmedToken,
+        tokenUpdatedAt: registration.updatedAt,
+        tokenLastUsedAt: registration.lastUsedAt ?? null,
+        tokenOwnerId: registration.ownerId
+      });
+      setSettingsTokenDraft(trimmedToken);
+      setToast({
+        kind: "success",
+        message: t("toast.settingsSaved")
+      });
+      setIsSettingsOpen(false);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "";
+      setToast({
+        kind: "error",
+        message: reason
+          ? t("toast.tokenRegisterFailed", { reason })
+          : t("toast.tokenRegisterFailedFallback")
+      });
+    }
   };
 
   const tokenReferenceTime = settings.tokenLastUsedAt ?? settings.tokenUpdatedAt;
@@ -907,11 +926,11 @@ const App = () => {
                 : t("list.badge.remaining", {
                     duration: formatRemaining(clip.expiresAt - now)
                   });
-              const directAccessUrl =
-                clip.directUrl ??
-                (clip.accessCode ? buildRelativeAccessPath(clip.accessCode) : "");
+              const directAccessUrl = clip.accessCode
+                ? clip.directUrl ?? buildDirectLink(clip.ownerId, clip.accessCode)
+                : "";
               const tokenAccessUrl = clip.accessToken
-                ? buildRelativeAccessPath(clip.accessToken)
+                ? clip.directUrl ?? buildDirectLink(clip.ownerId, clip.accessToken)
                 : "";
               const clipTypeLabel =
                 clip.type === "text"
@@ -979,7 +998,7 @@ const App = () => {
                           className="badge badge--ghost"
                           onClick={() =>
                             handleCopyAccess(
-                              tokenAccessUrl || buildRelativeAccessPath(clip.accessToken ?? ""),
+                              tokenAccessUrl,
                               "direct-link"
                             )
                           }

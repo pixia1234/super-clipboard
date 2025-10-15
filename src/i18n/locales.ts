@@ -23,6 +23,7 @@ type DaysParams = { days: number };
 type HoursMinutesParams = { hours: number; minutes: number };
 type HoursParams = { hours: number };
 type MinutesParams = { minutes: number };
+type ReasonParams = { reason: string };
 
 const toRange = (params?: Record<string, unknown>): RangeParams => {
   const { min = 0, max = 0 } = (params ?? {}) as Partial<RangeParams>;
@@ -99,6 +100,11 @@ const toMinutes = (params?: Record<string, unknown>): MinutesParams => {
   return { minutes };
 };
 
+const toReason = (params?: Record<string, unknown>): ReasonParams => {
+  const { reason = "" } = (params ?? {}) as Partial<ReasonParams>;
+  return { reason: String(reason) };
+};
+
 const zhCN: TranslationDictionary = {
   "language.zhCN": "中文（简体）",
   "language.en": "English",
@@ -172,6 +178,11 @@ const zhCN: TranslationDictionary = {
   "toast.createSuccess.text": "云端文本剪贴板已创建",
   "toast.createSuccess.file": "云端文件剪贴板已创建",
   "toast.createFailed": "创建失败，请稍后重试",
+  "toast.tokenRegisterFailed": (params) => {
+    const { reason } = toReason(params);
+    return `持久 Token 保存失败：${reason}`;
+  },
+  "toast.tokenRegisterFailedFallback": "持久 Token 保存失败，请稍后重试",
   "toast.noAccessValue": (params) => {
     const { target } = toTarget(params);
     return `当前剪贴板没有可复制的${target}`;
@@ -357,6 +368,12 @@ const en: TranslationDictionary = {
   "toast.createSuccess.text": "Text clipboard created.",
   "toast.createSuccess.file": "File clipboard created.",
   "toast.createFailed": "Creation failed. Please try again later.",
+  "toast.tokenRegisterFailed": (params) => {
+    const { reason } = toReason(params);
+    return `Failed to save persistent token: ${reason}`;
+  },
+  "toast.tokenRegisterFailedFallback":
+    "Failed to save persistent token. Please try again later.",
   "toast.noAccessValue": (params) => {
     const { target } = toTarget(params);
     return `No ${target} available to copy.`;
@@ -545,6 +562,12 @@ const ja: TranslationDictionary = {
   "toast.createSuccess.text": "テキストのクリップボードを作成しました。",
   "toast.createSuccess.file": "ファイルのクリップボードを作成しました。",
   "toast.createFailed": "作成に失敗しました。時間をおいて再試行してください。",
+  "toast.tokenRegisterFailed": (params) => {
+    const { reason } = toReason(params);
+    return `永続トークンの保存に失敗しました: ${reason}`;
+  },
+  "toast.tokenRegisterFailedFallback":
+    "永続トークンの保存に失敗しました。時間をおいて再試行してください。",
   "toast.noAccessValue": (params) => {
     const { target } = toTarget(params);
     return `コピーできる ${target} がありません。`;

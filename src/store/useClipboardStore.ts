@@ -57,6 +57,8 @@ export type RemoteClip = {
   downloadCount: number;
   accessCode?: string | null;
   accessToken?: string | null;
+  accessTokenOwner?: string | null;
+  ownerId: string;
   payload: RemoteClipPayload;
   directUrl?: string | null;
 };

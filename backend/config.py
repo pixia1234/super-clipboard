@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     max_allowed_downloads: int = 500
     cleanup_interval_seconds: int = 300
     max_file_size_bytes: int = 50 * 1024 * 1024
+    token_expiry_hours: int = 720
     static_root: Path = Path("dist")
 
     model_config = SettingsConfigDict(

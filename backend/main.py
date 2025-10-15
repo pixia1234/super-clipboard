@@ -15,6 +15,8 @@ from .schemas import (
     ClipResponse,
     DeleteResponse,
     IncrementResponse,
+    TokenRegisterRequest,
+    TokenRegisterResponse,
 )
 from .storage import store_data_url
 from .utils import build_base_url, build_text_clip_html
@@ -73,31 +75,55 @@ async def index():
 
 
 @api_router.get("/clips", response_model=ClipListResponse)
-async def list_clips(request: Request) -> ClipListResponse:
+async def list_clips(request: Request, ownerId: str) -> ClipListResponse:
     repository.purge_inactive()
     base_url = build_base_url(request)
-    clips = [ClipResponse.from_clip(clip, base_url) for clip in repository.list_clips()]
+    normalized_owner = ownerId.strip()
+    if not normalized_owner:
+        raise HTTPException(status_code=400, detail="ownerId 缺失")
+    clips = [
+        ClipResponse.from_clip(clip, base_url)
+        for clip in repository.list_clips(normalized_owner)
+    ]
     return ClipListResponse(items=clips)
 
 
+@api_router.post("/tokens/register", response_model=TokenRegisterResponse)
+async def register_persistent_token(body: TokenRegisterRequest) -> TokenRegisterResponse:
+    try:
+        record = repository.register_token(body.token, body.ownerId)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error))
+    return TokenRegisterResponse(
+        token=record["token"],
+        ownerId=record["owner_id"],
+        updatedAt=record["updated_at"] * 1000,
+        lastUsedAt=(record["last_used_at"] * 1000) if record["last_used_at"] else None,
+        expiresAt=record["expires_at"] * 1000,
+    )
+
+
 @api_router.get("/clips/{clip_id}", response_model=ClipResponse)
-async def get_clip(clip_id: str, request: Request) -> ClipResponse:
+async def get_clip(clip_id: str, request: Request, ownerId: str) -> ClipResponse:
     clip = repository.get_clip(clip_id)
-    if not clip:
+    if not clip or clip.owner_id != ownerId:
         raise HTTPException(status_code=404, detail="片段未找到")
     if not clip.is_active:
-        repository.delete_clip(clip_id)
+        repository.delete_clip(clip_id, ownerId)
         raise HTTPException(status_code=404, detail="片段已过期或达到下载次数")
     return ClipResponse.from_clip(clip, build_base_url(request))
 
 
 @api_router.get("/clips/code/{access_code}", response_model=ClipResponse)
-async def get_clip_by_code(access_code: str, request: Request) -> ClipResponse:
-    clip = repository.get_clip_by_code(access_code)
+async def get_clip_by_code(access_code: str, request: Request, ownerId: str) -> ClipResponse:
+    normalized_owner = ownerId.strip()
+    if not normalized_owner:
+        raise HTTPException(status_code=400, detail="ownerId 缺失")
+    clip = repository.get_clip_by_code_and_owner(access_code, normalized_owner)
     if not clip:
         raise HTTPException(status_code=404, detail="直链不存在或已过期")
     if not clip.is_active:
-        repository.delete_clip(clip.id)
+        repository.delete_clip(clip.id, normalized_owner)
         raise HTTPException(status_code=404, detail="直链不存在或已过期")
     return ClipResponse.from_clip(clip, build_base_url(request))
 
@@ -128,6 +154,8 @@ async def create_clip(body: ClipCreateRequest, request: Request) -> ClipResponse
             max_downloads=body.maxDownloads,
             access_code=body.accessCode,
             access_token=body.accessToken,
+            access_token_owner=body.accessTokenOwner,
+            owner_id=body.ownerId,
             text=_resolve_text_payload(body) if body.type == "text" else None,
             stored_file=stored_file,
         )
@@ -135,26 +163,28 @@ async def create_clip(body: ClipCreateRequest, request: Request) -> ClipResponse
         if stored_file:
             stored_file.path.unlink(missing_ok=True)  # type: ignore[attr-defined]
         message = str(error)
-        status = 409 if "已存在" in message else 400
+        status = 409 if any(keyword in message for keyword in ("已存在", "Token")) else 400
         raise HTTPException(status_code=status, detail=message)
     return ClipResponse.from_clip(clip, build_base_url(request))
 
 
 @api_router.delete("/clips/{clip_id}", response_model=DeleteResponse)
-async def delete_clip(clip_id: str) -> DeleteResponse:
-    removed = repository.delete_clip(clip_id)
+async def delete_clip(clip_id: str, ownerId: str) -> DeleteResponse:
+    normalized_owner = ownerId.strip()
+    removed = repository.delete_clip(clip_id, normalized_owner)
     if not removed:
         raise HTTPException(status_code=404, detail="片段未找到")
     return DeleteResponse(ok=True)
 
 
 @api_router.post("/clips/{clip_id}/download", response_model=IncrementResponse)
-async def track_download(clip_id: str, request: Request) -> IncrementResponse:
-    clip, reached = repository.increment_downloads(clip_id)
+async def track_download(clip_id: str, request: Request, ownerId: str) -> IncrementResponse:
+    normalized_owner = ownerId.strip()
+    clip, reached = repository.increment_downloads(clip_id, normalized_owner)
     if not clip:
         raise HTTPException(status_code=404, detail="片段未找到")
     if not clip.is_active and reached:
-        repository.delete_clip(clip_id)
+        repository.delete_clip(clip_id, normalized_owner)
         raise HTTPException(status_code=410, detail="片段已过期或销毁")
     return IncrementResponse(
         clip=ClipResponse.from_clip(clip, build_base_url(request)),
@@ -166,25 +196,29 @@ async def track_download(clip_id: str, request: Request) -> IncrementResponse:
 async def download_file(
     clip_id: str,
     background: BackgroundTasks,
+    ownerId: str,
 ) -> FileResponse:
+    normalized_owner = ownerId.strip()
     clip = repository.get_clip(clip_id)
     if not clip:
         raise HTTPException(status_code=404, detail="片段未找到")
+    if clip.owner_id != normalized_owner:
+        raise HTTPException(status_code=404, detail="片段未找到")
     if not clip.stored_file:
-        repository.delete_clip(clip_id)
+        repository.delete_clip(clip_id, normalized_owner)
         raise HTTPException(status_code=410, detail="文件已丢失")
     if not clip.is_active:
-        repository.delete_clip(clip_id)
+        repository.delete_clip(clip_id, normalized_owner)
         raise HTTPException(status_code=410, detail="文件已过期或销毁")
     file_path = clip.stored_file.path
     if not file_path.exists():
-        repository.delete_clip(clip_id)
+        repository.delete_clip(clip_id, normalized_owner)
         raise HTTPException(status_code=410, detail="文件已丢失")
-    clip, reached = repository.increment_downloads(clip_id)
+    clip, reached = repository.increment_downloads(clip_id, normalized_owner)
     if not clip:
         raise HTTPException(status_code=404, detail="片段未找到")
     if reached:
-        background.add_task(repository.delete_clip, clip_id)
+        background.add_task(repository.delete_clip, clip_id, normalized_owner)
     return FileResponse(
         path=file_path,
         media_type=clip.stored_file.mime if clip.stored_file else "application/octet-stream",
@@ -196,23 +230,33 @@ async def download_file(
 app.include_router(api_router)
 
 
+def _parse_identifier(identifier: str) -> tuple[Optional[str], str]:
+    if "." in identifier:
+        owner_part, remainder = identifier.split(".", 1)
+        return owner_part.strip() or None, remainder.strip()
+    return None, identifier.strip()
+
+
 def _get_active_clip(identifier: str) -> Clip:
     trimmed = identifier.strip()
     if not trimmed:
         raise HTTPException(status_code=404, detail="直链不存在或已过期")
-    clip = repository.get_clip_by_code(trimmed)
-    if not clip:
-        clip = repository.get_clip_by_token(trimmed)
+    owner_hint, remainder = _parse_identifier(trimmed)
+    clip: Optional[Clip] = None
+    if owner_hint and remainder.isdigit() and len(remainder) == 5:
+        clip = repository.get_clip_by_code_and_owner(remainder, owner_hint)
+    if not clip and owner_hint:
+        clip = repository.get_clip_by_token(remainder, owner_hint)
     if not clip:
         raise HTTPException(status_code=404, detail="直链不存在或已过期")
     if not clip.is_active:
-        repository.delete_clip(clip.id)
+        repository.delete_clip(clip.id, clip.owner_id)
         raise HTTPException(status_code=404, detail="直链不存在或已过期")
     return clip
 
 
 def _increment_clip_downloads(clip: Clip) -> tuple[Clip, bool]:
-    updated_clip, reached = repository.increment_downloads(clip.id)
+    updated_clip, reached = repository.increment_downloads(clip.id, clip.owner_id)
     if not updated_clip:
         raise HTTPException(status_code=404, detail="直链不存在或已过期")
     return updated_clip, reached
@@ -226,7 +270,7 @@ def _dispatch_clip_response(
 ):
     if clip.type == "text":
         if reached:
-            background.add_task(repository.delete_clip, clip.id)
+            background.add_task(repository.delete_clip, clip.id, clip.owner_id)
         if raw:
             return PlainTextResponse(content=clip.text or "")
         html = build_text_clip_html(
@@ -238,10 +282,10 @@ def _dispatch_clip_response(
         return HTMLResponse(content=html)
     if clip.stored_file:
         if reached:
-            background.add_task(repository.delete_clip, clip.id)
+            background.add_task(repository.delete_clip, clip.id, clip.owner_id)
         file_path = clip.stored_file.path
         if not file_path.exists():
-            repository.delete_clip(clip.id)
+            repository.delete_clip(clip.id, clip.owner_id)
             raise HTTPException(status_code=410, detail="文件已丢失")
         return FileResponse(
             path=file_path,
@@ -249,7 +293,7 @@ def _dispatch_clip_response(
             filename=clip.stored_file.name,
             background=background,
         )
-    repository.delete_clip(clip.id)
+    repository.delete_clip(clip.id, clip.owner_id)
     raise HTTPException(status_code=410, detail="文件数据缺失")
 
 

@@ -18,6 +18,8 @@ type ApiClip = {
   downloadCount: number;
   accessCode?: string | null;
   accessToken?: string | null;
+  accessTokenOwner?: string | null;
+  ownerId: string;
   payload: {
     text?: string | null;
     file?: ApiFilePayload;
@@ -29,8 +31,10 @@ type CreateClipPayload = {
   type: ClipType;
   expiresAt: number;
   maxDownloads: number;
+  ownerId: string;
   accessCode?: string;
   accessToken?: string;
+  accessTokenOwner?: string;
   payload: {
     text?: string;
     file?: {
@@ -84,6 +88,8 @@ const mapClip = (clip: ApiClip): RemoteClip => ({
   downloadCount: clip.downloadCount,
   accessCode: clip.accessCode ?? undefined,
   accessToken: clip.accessToken ?? undefined,
+  accessTokenOwner: clip.accessTokenOwner ?? undefined,
+  ownerId: clip.ownerId,
   payload: {
     text: clip.payload?.text ?? null,
     file: clip.payload?.file ?? null
@@ -91,8 +97,10 @@ const mapClip = (clip: ApiClip): RemoteClip => ({
   directUrl: clip.directUrl ?? undefined
 });
 
-export const listRemoteClips = async (): Promise<RemoteClip[]> => {
-  const data = await request<{ items: ApiClip[] }>(`${API_BASE}/clips`);
+export const listRemoteClips = async (ownerId: string): Promise<RemoteClip[]> => {
+  const data = await request<{ items: ApiClip[] }>(
+    `${API_BASE}/clips?ownerId=${encodeURIComponent(ownerId)}`
+  );
   return data.items.map(mapClip);
 };
 
@@ -106,22 +114,53 @@ export const createRemoteClip = async (
   return mapClip(data);
 };
 
-export const deleteRemoteClip = async (clipId: string): Promise<void> => {
-  await request(`${API_BASE}/clips/${clipId}`, {
-    method: "DELETE"
+type RegisterTokenResponse = {
+  token: string;
+  ownerId: string;
+  updatedAt: number;
+  lastUsedAt?: number | null;
+  expiresAt: number;
+};
+
+export const registerPersistentToken = async (
+  token: string,
+  ownerId?: string
+): Promise<RegisterTokenResponse> => {
+  const body: Record<string, string> = { token };
+  if (ownerId) {
+    body.ownerId = ownerId;
+  }
+  return request<RegisterTokenResponse>(`${API_BASE}/tokens/register`, {
+    method: "POST",
+    body: JSON.stringify(body)
   });
 };
 
-export const fetchRemoteClip = async (clipId: string): Promise<RemoteClip> => {
-  const data = await request<ApiClip>(`${API_BASE}/clips/${clipId}`);
+export const deleteRemoteClip = async (clipId: string, ownerId: string): Promise<void> => {
+  await request(
+    `${API_BASE}/clips/${clipId}?ownerId=${encodeURIComponent(ownerId)}`,
+    {
+      method: "DELETE"
+    }
+  );
+};
+
+export const fetchRemoteClip = async (
+  clipId: string,
+  ownerId: string
+): Promise<RemoteClip> => {
+  const data = await request<ApiClip>(
+    `${API_BASE}/clips/${clipId}?ownerId=${encodeURIComponent(ownerId)}`
+  );
   return mapClip(data);
 };
 
 export const incrementRemoteClip = async (
-  clipId: string
+  clipId: string,
+  ownerId: string
 ): Promise<{ clip: RemoteClip; removed: boolean }> => {
   const data = await request<{ clip: ApiClip; removed: boolean }>(
-    `${API_BASE}/clips/${clipId}/download`,
+    `${API_BASE}/clips/${clipId}/download?ownerId=${encodeURIComponent(ownerId)}`,
     {
       method: "POST"
     }
