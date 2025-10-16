@@ -2,6 +2,8 @@
 
 Super Clipboard focuses on cloud-hosted text and file relay. With expiring links, device binding, and access credentials, it makes cross-device content transfer effortless.
 
+Try it now: [https://clip.pixia.eu.org/](https://clip.pixia.eu.org/) (Demo site; data is periodically cleared. Do not upload private content. No data responsibility or SLA guarantee.)
+
 ## Core Capabilities
 
 - **Cloud text snippets**: Quickly type or import from the system clipboard, generate either a 5-character short code or a persistent token (seven or more characters), and retrieve snippets even in locked-down environments.
