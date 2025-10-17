@@ -165,6 +165,7 @@ const zhCN: TranslationDictionary = {
   "toast.tokenExpired": "持久 Token 超过 720 小时未使用，已自动销毁",
   "toast.clipboardReadFailed": "无法读取系统剪贴板，请手动粘贴内容",
   "toast.clipboardImported": "已导入系统剪贴板内容",
+  "toast.clipboardImageImported": "已导入剪贴板图片",
   "toast.fileTooLarge": "文件体积超过 50MB 限制，请压缩后重试",
   "toast.fileReadFailed": "读取文件失败，请稍后再试",
   "toast.textRequired": "请填写需要分享的文本内容",
@@ -354,6 +355,7 @@ const en: TranslationDictionary = {
   "toast.clipboardReadFailed":
     "Clipboard cannot be read. Please paste the content manually.",
   "toast.clipboardImported": "System clipboard content imported.",
+  "toast.clipboardImageImported": "Clipboard image imported.",
   "toast.fileTooLarge": "File exceeds the 50 MB limit. Please compress and retry.",
   "toast.fileReadFailed": "Failed to read the file. Please try again later.",
   "toast.textRequired": "Enter the text you want to share.",
@@ -548,6 +550,7 @@ const ja: TranslationDictionary = {
   "toast.clipboardReadFailed":
     "システムのクリップボードを読み取れません。手動で貼り付けてください。",
   "toast.clipboardImported": "クリップボードの内容を取り込みました。",
+  "toast.clipboardImageImported": "クリップボードの画像を取り込みました。",
   "toast.fileTooLarge": "ファイルが 50 MB を超えています。圧縮してから再試行してください。",
   "toast.fileReadFailed": "ファイルの読み込みに失敗しました。後でもう一度お試しください。",
   "toast.textRequired": "共有するテキストを入力してください。",

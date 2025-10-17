@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   useClipboardStore,
   ClipType,
@@ -249,6 +249,109 @@ const App = () => {
     });
   };
 
+  const processFile = useCallback(
+    async (
+      file: File,
+      options?: {
+        fallbackName?: string;
+      }
+    ): Promise<boolean> => {
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        setToast({
+          kind: "error",
+          message: t("toast.fileTooLarge")
+        });
+        setSelectedFile(null);
+        return false;
+      }
+
+      const resolvedName =
+        (file.name && file.name.trim()) || options?.fallbackName || "clipboard-upload";
+
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        setSelectedFile({
+          name: resolvedName,
+          size: file.size,
+          type: file.type,
+          dataUrl
+        });
+        return true;
+      } catch (error) {
+        console.warn(t("toast.fileReadFailed"), error);
+        setToast({
+          kind: "error",
+          message: t("toast.fileReadFailed")
+        });
+        setSelectedFile(null);
+        return false;
+      }
+    },
+    [t]
+  );
+
+  useEffect(() => {
+    if (type !== "file") {
+      return;
+    }
+
+    const handlePaste = async (event: ClipboardEvent) => {
+      const clipboardData = event.clipboardData;
+      if (!clipboardData) {
+        return;
+      }
+
+      const items = clipboardData.items;
+      if (!items || items.length === 0) {
+        return;
+      }
+
+      const item = Array.from(items).find(
+        (candidate) =>
+          candidate.kind === "file" && candidate.type.startsWith("image/")
+      );
+
+      if (!item) {
+        return;
+      }
+
+      const blob = item.getAsFile();
+      if (!blob) {
+        return;
+      }
+
+      event.preventDefault();
+
+      const mimeType = blob.type || item.type || "image/png";
+      const extensionCandidate = mimeType.split("/")[1]?.split(";")[0] ?? "";
+      const safeExtension = extensionCandidate ? extensionCandidate : "png";
+      const fallbackName = `pasted-image-${new Date()
+        .toISOString()
+        .replace(/[:.]/g, "-")}.${safeExtension}`;
+
+      const file =
+        blob instanceof File && blob.name
+          ? blob
+          : new File([blob], fallbackName, {
+              type: mimeType,
+              lastModified: Date.now()
+            });
+
+      const success = await processFile(file, { fallbackName });
+      if (success) {
+        setToast({
+          kind: "success",
+          message: t("toast.clipboardImageImported")
+        });
+      }
+    };
+
+    window.addEventListener("paste", handlePaste);
+    return () => {
+      window.removeEventListener("paste", handlePaste);
+    };
+  }, [processFile, t, type]);
+
   const handleFileSelect = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
@@ -256,29 +359,9 @@ const App = () => {
       return;
     }
 
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-      setToast({
-        kind: "error",
-        message: t("toast.fileTooLarge")
-      });
+    const success = await processFile(file);
+    if (!success) {
       event.target.value = "";
-      return;
-    }
-
-    try {
-      const dataUrl = await readFileAsDataUrl(file);
-      setSelectedFile({
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        dataUrl
-      });
-    } catch (error) {
-      console.warn(t("toast.fileReadFailed"), error);
-      setToast({
-        kind: "error",
-        message: t("toast.fileReadFailed")
-      });
     }
   };
 
