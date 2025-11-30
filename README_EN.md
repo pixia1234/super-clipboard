@@ -65,9 +65,7 @@ Require a captcha before creating a cloud clipboard. Google reCAPTCHA and Cloudf
   - `SUPER_CLIPBOARD_CAPTCHA_PROVIDER=turnstile` or `recaptcha`  
   - `SUPER_CLIPBOARD_CAPTCHA_SECRET=<provider secret>`  
   - Optional: `SUPER_CLIPBOARD_CAPTCHA_BYPASS_TOKEN=<testing-only bypass token>` (avoid enabling in production)
-- Frontend env vars (`./.env` or runtime flags)  
-  - `VITE_CAPTCHA_PROVIDER=turnstile` or `recaptcha`  
-  - `VITE_CAPTCHA_SITE_KEY=<site key>`  
+- `SUPER_CLIPBOARD_CAPTCHA_SITE_KEY=<site key>` (public site key, served to the frontend at runtime)
 
 After configuration, users must complete the captcha to create a clipboard; requests without a valid token are rejected.
 
@@ -78,6 +76,9 @@ After configuration, users must complete the captcha to create a clipboard; requ
 docker run -d --name super-clipboard \
   -p 5173:5173 \
   -v clipboard-data:/app/backend/storage \
+  -e SUPER_CLIPBOARD_CAPTCHA_PROVIDER=turnstile \
+  -e SUPER_CLIPBOARD_CAPTCHA_SECRET=<your_turnstile_secret> \
+  -e SUPER_CLIPBOARD_CAPTCHA_SITE_KEY=<your_turnstile_site_key> \
   pixia1234/super-clipboard:latest
 
 # Or use Docker Compose (defaults to port 5173)

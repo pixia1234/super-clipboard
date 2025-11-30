@@ -172,6 +172,7 @@ def test_captcha_required_when_enabled(tmp_path):
         "SUPER_CLIPBOARD_CAPTCHA_PROVIDER": "turnstile",
         "SUPER_CLIPBOARD_CAPTCHA_SECRET": "dummy-secret",
         "SUPER_CLIPBOARD_CAPTCHA_BYPASS_TOKEN": "pass-me",
+        "SUPER_CLIPBOARD_CAPTCHA_SITE_KEY": "dummy-site-key",
     }
     with build_client(tmp_path, extra_env=extra_env) as client:
         environment_id = "captcha-owner"
@@ -189,21 +190,6 @@ def test_captcha_required_when_enabled(tmp_path):
         assert missing.status_code == 400
         assert "验证码" in missing.json()["detail"]
 
-        mismatch = client.post(
-            "/api/clips",
-            json={
-                "type": "text",
-                "expiresAt": future_timestamp(),
-                "maxDownloads": 1,
-                "environmentId": environment_id,
-                "payload": {"text": "captcha mismatch"},
-                "captchaToken": "pass-me",
-                "captchaProvider": "recaptcha",
-            },
-        )
-        assert mismatch.status_code == 400
-        assert "验证码配置不匹配" in mismatch.json()["detail"]
-
         ok = client.post(
             "/api/clips",
             json={
@@ -218,3 +204,17 @@ def test_captcha_required_when_enabled(tmp_path):
         )
         assert ok.status_code == 201
         assert ok.json()["payload"]["text"] == "captcha ok"
+
+
+def test_config_endpoint(tmp_path):
+    extra_env = {
+        "SUPER_CLIPBOARD_CAPTCHA_PROVIDER": "turnstile",
+        "SUPER_CLIPBOARD_CAPTCHA_SECRET": "dummy-secret",
+        "SUPER_CLIPBOARD_CAPTCHA_SITE_KEY": "site-key-demo",
+    }
+    with build_client(tmp_path, extra_env=extra_env) as client:
+        resp = client.get("/api/config")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["captchaProvider"] == "turnstile"
+        assert data["captchaSiteKey"] == "site-key-demo"

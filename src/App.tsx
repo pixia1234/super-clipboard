@@ -16,7 +16,9 @@ import {
   createRemoteClip,
   deleteRemoteClip,
   fetchRemoteClip,
-  registerPersistentToken
+  registerPersistentToken,
+  fetchAppConfig,
+  type AppConfig
 } from "./utils/api";
 import "./App.css";
 import { useI18n } from "./i18n/I18nProvider";
@@ -48,10 +50,7 @@ const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50MB
 const TOKEN_EXPIRY_MS = 720 * 60 * 60 * 1000; // 720 hours
 const DEFAULT_MAX_DOWNLOADS = 10;
 const MAX_DOWNLOADS_OPTIONS = [3, 5, 10, 20, 50, 100];
-const SUPPORTED_CAPTCHA_PROVIDERS: readonly CaptchaProviderType[] = [
-  "turnstile",
-  "recaptcha"
-] as const;
+const SUPPORTED_CAPTCHA_PROVIDERS: readonly CaptchaProviderType[] = ["turnstile", "recaptcha"] as const;
 
 type DraftFile = {
   name: string;
@@ -103,14 +102,19 @@ const App = () => {
   const [captchaToken, setCaptchaToken] = useState("");
   const [captchaError, setCaptchaError] = useState<string | null>(null);
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
+  const [captchaConfig, setCaptchaConfig] = useState<AppConfig | null>(null);
 
   const captchaProvider = useMemo<CaptchaProviderType | null>(() => {
-    const raw = (import.meta.env.VITE_CAPTCHA_PROVIDER ?? "").trim().toLowerCase();
+    if (!captchaConfig?.captchaProvider) {
+      return null;
+    }
+    const raw = captchaConfig.captchaProvider.trim().toLowerCase();
     return SUPPORTED_CAPTCHA_PROVIDERS.find((item) => item === raw) ?? null;
-  }, []);
+  }, [captchaConfig?.captchaProvider]);
+
   const captchaSiteKey = useMemo(
-    () => (import.meta.env.VITE_CAPTCHA_SITE_KEY ?? "").trim(),
-    []
+    () => (captchaConfig?.captchaSiteKey ?? "").trim(),
+    [captchaConfig?.captchaSiteKey]
   );
   const isCaptchaEnabled = Boolean(captchaProvider && captchaSiteKey);
 
@@ -191,6 +195,18 @@ const App = () => {
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const config = await fetchAppConfig();
+        setCaptchaConfig(config);
+      } catch (error) {
+        console.warn("Failed to load app config", error);
+      }
+    };
+    void loadConfig();
   }, []);
 
   useEffect(() => {

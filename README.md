@@ -67,9 +67,7 @@ pytest backend/tests
   - `SUPER_CLIPBOARD_CAPTCHA_PROVIDER=turnstile` 或 `recaptcha`  
   - `SUPER_CLIPBOARD_CAPTCHA_SECRET=<对应的 Secret>`  
   - 可选：`SUPER_CLIPBOARD_CAPTCHA_BYPASS_TOKEN=<仅用于测试的直通 Token>`（请勿在生产启用）
-- 前端环境变量（`./.env` 或启动参数）  
-  - `VITE_CAPTCHA_PROVIDER=turnstile` 或 `recaptcha`  
-  - `VITE_CAPTCHA_SITE_KEY=<对应的 site key>`  （前端用公开的 site key，后端用 secret）
+- `SUPER_CLIPBOARD_CAPTCHA_SITE_KEY=<对应的 site key>`（前端使用的公开 site key，后端统一下发）
 
 配置完成后，创建剪贴板前需完成人机验证，验证失败请求会直接被拒绝。
 
@@ -83,6 +81,9 @@ pytest backend/tests
 docker run -d --name super-clipboard \
   -p 5173:5173 \
   -v clipboard-data:/app/backend/storage \
+  -e SUPER_CLIPBOARD_CAPTCHA_PROVIDER=turnstile \
+  -e SUPER_CLIPBOARD_CAPTCHA_SECRET=<your_turnstile_secret> \
+  -e SUPER_CLIPBOARD_CAPTCHA_SITE_KEY=<your_turnstile_site_key> \
   pixia1234/super-clipboard:latest
 
 # 或使用 compose（默认监听 5173）

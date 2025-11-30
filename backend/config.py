@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     captcha_secret: str | None = None
     captcha_timeout_seconds: float = 6.0
     captcha_bypass_token: str | None = None
+    captcha_site_key: str | None = None
 
     @field_validator("captcha_provider")
     @classmethod
@@ -32,6 +33,14 @@ class Settings(BaseSettings):
     @field_validator("captcha_secret", "captcha_bypass_token")
     @classmethod
     def trim_optional(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        trimmed = value.strip()
+        return trimmed or None
+
+    @field_validator("captcha_site_key")
+    @classmethod
+    def trim_site_key(cls, value: str | None) -> str | None:
         if value is None:
             return None
         trimmed = value.strip()

@@ -144,6 +144,11 @@ class IncrementResponse(BaseModel):
     removed: bool
 
 
+class AppConfigResponse(BaseModel):
+    captchaProvider: Optional[Literal["turnstile", "recaptcha"]]
+    captchaSiteKey: Optional[str]
+
+
 class TokenRegisterRequest(BaseModel):
     token: str = Field(min_length=7)
     environmentId: Optional[str] = Field(default=None, min_length=1, max_length=64)

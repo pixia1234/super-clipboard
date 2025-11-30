@@ -10,6 +10,7 @@ from .config import settings
 from .models import Clip
 from .repository import ClipRepository
 from .schemas import (
+    AppConfigResponse,
     ClipCreateRequest,
     ClipListResponse,
     ClipResponse,
@@ -100,6 +101,14 @@ async def register_persistent_token(body: TokenRegisterRequest) -> TokenRegister
         updatedAt=record["updated_at"] * 1000,
         lastUsedAt=(record["last_used_at"] * 1000) if record["last_used_at"] else None,
         expiresAt=record["expires_at"] * 1000,
+    )
+
+
+@api_router.get("/config", response_model=AppConfigResponse)
+async def get_app_config() -> AppConfigResponse:
+    return AppConfigResponse(
+        captchaProvider=settings.captcha_provider or None,
+        captchaSiteKey=settings.captcha_site_key or None,
     )
 
 

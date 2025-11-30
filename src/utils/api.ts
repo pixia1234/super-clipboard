@@ -119,6 +119,11 @@ type RegisterTokenResponse = {
   expiresAt: number;
 };
 
+export type AppConfig = {
+  captchaProvider?: "turnstile" | "recaptcha";
+  captchaSiteKey?: string;
+};
+
 export const registerPersistentToken = async (
   token: string,
   environmentId?: string
@@ -166,4 +171,8 @@ export const incrementRemoteClip = async (
     clip: mapClip(data.clip),
     removed: data.removed
   };
+};
+
+export const fetchAppConfig = async (): Promise<AppConfig> => {
+  return request<AppConfig>(`${API_BASE}/config`);
 };
