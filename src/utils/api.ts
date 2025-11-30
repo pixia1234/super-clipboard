@@ -32,6 +32,8 @@ type CreateClipPayload = {
   environmentId: string;
   accessCode?: string;
   accessToken?: string;
+  captchaToken?: string;
+  captchaProvider?: "turnstile" | "recaptcha";
   payload: {
     text?: string;
     file?: {

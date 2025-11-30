@@ -9,6 +9,19 @@
       content="Super Clipboard 是一款提升效率的 Web 剪贴板管理工具。"
     />
     <link rel="icon" type="image/svg+xml" href="/src/assets/logo.svg" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+        default-src 'self';
+        script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://challenges.cloudflare.com https://www.gstatic.com https://www.google.com;
+        style-src 'self' 'unsafe-inline';
+        img-src 'self' data: blob: https:;
+        connect-src 'self' ws: http: https:;
+        frame-src https://challenges.cloudflare.com https://www.google.com https://recaptcha.google.com https://www.recaptcha.net;
+        worker-src 'self' blob:;
+        font-src 'self' data:;
+      "
+    />
   </head>
   <body>
     <div id="root"></div>

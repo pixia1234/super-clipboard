@@ -246,6 +246,37 @@
   color: #94a3b8;
 }
 
+.field__hint--error {
+  color: #b91c1c;
+}
+
+.captcha-box {
+  display: inline-flex;
+  padding: 12px;
+  border: 1px dashed rgba(148, 163, 184, 0.6);
+  border-radius: 12px;
+  background: #f8fafc;
+  min-height: 92px;
+  align-items: center;
+  justify-content: center;
+}
+
+.captcha {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.captcha__status {
+  font-size: 0.9rem;
+  color: #94a3b8;
+}
+
+.captcha__status--error {
+  color: #b91c1c;
+}
+
 .field__options {
   display: flex;
   flex-wrap: wrap;

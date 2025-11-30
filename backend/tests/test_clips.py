@@ -7,13 +7,15 @@ from importlib import import_module
 from fastapi.testclient import TestClient
 
 
-def build_client(tmp_path):
+def build_client(tmp_path, extra_env: dict[str, str] | None = None):
     db_path = tmp_path / "clips.db"
     files_dir = tmp_path / "files"
     static_dir = tmp_path / "static"
     os.environ["SUPER_CLIPBOARD_DATABASE_PATH"] = str(db_path)
     os.environ["SUPER_CLIPBOARD_FILE_STORAGE_DIR"] = str(files_dir)
     os.environ["SUPER_CLIPBOARD_STATIC_ROOT"] = str(static_dir)
+    for key, value in (extra_env or {}).items():
+        os.environ[key] = value
 
     for module in list(sys.modules):
         if module.startswith("backend."):
@@ -163,3 +165,56 @@ def test_token_register_conflict(tmp_path):
         )
         assert conflict.status_code == 409
         assert "被其他设备占用" in conflict.json()["detail"]
+
+
+def test_captcha_required_when_enabled(tmp_path):
+    extra_env = {
+        "SUPER_CLIPBOARD_CAPTCHA_PROVIDER": "turnstile",
+        "SUPER_CLIPBOARD_CAPTCHA_SECRET": "dummy-secret",
+        "SUPER_CLIPBOARD_CAPTCHA_BYPASS_TOKEN": "pass-me",
+    }
+    with build_client(tmp_path, extra_env=extra_env) as client:
+        environment_id = "captcha-owner"
+
+        missing = client.post(
+            "/api/clips",
+            json={
+                "type": "text",
+                "expiresAt": future_timestamp(),
+                "maxDownloads": 1,
+                "environmentId": environment_id,
+                "payload": {"text": "captcha needed"},
+            },
+        )
+        assert missing.status_code == 400
+        assert "验证码" in missing.json()["detail"]
+
+        mismatch = client.post(
+            "/api/clips",
+            json={
+                "type": "text",
+                "expiresAt": future_timestamp(),
+                "maxDownloads": 1,
+                "environmentId": environment_id,
+                "payload": {"text": "captcha mismatch"},
+                "captchaToken": "pass-me",
+                "captchaProvider": "recaptcha",
+            },
+        )
+        assert mismatch.status_code == 400
+        assert "验证码配置不匹配" in mismatch.json()["detail"]
+
+        ok = client.post(
+            "/api/clips",
+            json={
+                "type": "text",
+                "expiresAt": future_timestamp(),
+                "maxDownloads": 1,
+                "environmentId": environment_id,
+                "payload": {"text": "captcha ok"},
+                "captchaToken": "pass-me",
+                "captchaProvider": "turnstile",
+            },
+        )
+        assert ok.status_code == 201
+        assert ok.json()["payload"]["text"] == "captcha ok"

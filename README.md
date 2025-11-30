@@ -59,6 +59,23 @@ pytest backend/tests
 
 > 生产部署时，先执行 `npm run build` 生成 `dist/` 静态资源，再启动后端（默认监听 `0.0.0.0:5173`），此时只需对外暴露 5173 端口即可完成前后端一体化部署。若保持 Vite 开发服务器运行，请在启动前设置 `BACKEND_PORT=5174 npm run dev` 以便代理到新的后端端口。
 
+### 🔐 启用验证码校验
+
+创建云端剪贴板时可选开启人机验证，支持 Google reCAPTCHA 与 Cloudflare Turnstile。需要前后端同时配置：
+
+- 后端环境变量  
+  - `SUPER_CLIPBOARD_CAPTCHA_PROVIDER=turnstile` 或 `recaptcha`  
+  - `SUPER_CLIPBOARD_CAPTCHA_SECRET=<对应的 Secret>`  
+  - 可选：`SUPER_CLIPBOARD_CAPTCHA_BYPASS_TOKEN=<仅用于测试的直通 Token>`（请勿在生产启用）
+- 前端环境变量（`./.env` 或启动参数）  
+  - `VITE_CAPTCHA_PROVIDER=turnstile` 或 `recaptcha`  
+  - `VITE_CAPTCHA_SITE_KEY=<对应的 site key>`  （前端用公开的 site key，后端用 secret）
+
+配置完成后，创建剪贴板前需完成人机验证，验证失败请求会直接被拒绝。
+
+**Turnstile 小组件模式**：前端不强制模式，实际展示由 site key 类型决定（Cloudflare 控制台可选托管/非交互式/不可见）。  
+**reCAPTCHA**：默认显式渲染为 v2 复选框；如需 Invisible，请使用对应类型的站点密钥（代码无需修改）。
+
 ## 🐳 Docker 部署
 
 ```bash

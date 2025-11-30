@@ -31,6 +31,8 @@ class ClipCreateRequest(BaseModel):
     accessToken: Optional[str] = Field(default=None, min_length=7)
     environmentId: str = Field(min_length=1, max_length=64)
     payload: ClipPayloadInput
+    captchaToken: Optional[str] = Field(default=None, min_length=1, max_length=4096)
+    captchaProvider: Optional[Literal["turnstile", "recaptcha"]] = Field(default=None)
 
     @field_validator("accessCode")
     @classmethod
@@ -50,6 +52,14 @@ class ClipCreateRequest(BaseModel):
         if value is None:
             return value
         return value.strip()
+
+    @field_validator("captchaToken")
+    @classmethod
+    def trim_captcha_token(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        trimmed = value.strip()
+        return trimmed or None
 
     @model_validator(mode="after")
     def validate_payload(self) -> "ClipCreateRequest":

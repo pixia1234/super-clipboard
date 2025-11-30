@@ -1,4 +1,5 @@
 from pathlib import Path
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +14,28 @@ class Settings(BaseSettings):
     max_file_size_bytes: int = 50 * 1024 * 1024
     token_expiry_hours: int = 720
     static_root: Path = Path("dist")
+    captcha_provider: str | None = None
+    captcha_secret: str | None = None
+    captcha_timeout_seconds: float = 6.0
+    captcha_bypass_token: str | None = None
+
+    @field_validator("captcha_provider")
+    @classmethod
+    def normalize_provider(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if normalized not in {"turnstile", "recaptcha"}:
+            raise ValueError("captcha_provider must be turnstile or recaptcha")
+        return normalized
+
+    @field_validator("captcha_secret", "captcha_bypass_token")
+    @classmethod
+    def trim_optional(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        trimmed = value.strip()
+        return trimmed or None
 
     model_config = SettingsConfigDict(
         env_prefix="SUPER_CLIPBOARD_",

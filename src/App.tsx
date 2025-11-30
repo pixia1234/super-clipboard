@@ -21,6 +21,7 @@ import {
 import "./App.css";
 import { useI18n } from "./i18n/I18nProvider";
 import type { Locale } from "./i18n/locales";
+import Captcha, { CaptchaProvider as CaptchaProviderType } from "./components/Captcha";
 
 const buildRelativeAccessPath = (value: string): string => {
   const trimmed = value.trim();
@@ -47,6 +48,10 @@ const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50MB
 const TOKEN_EXPIRY_MS = 720 * 60 * 60 * 1000; // 720 hours
 const DEFAULT_MAX_DOWNLOADS = 10;
 const MAX_DOWNLOADS_OPTIONS = [3, 5, 10, 20, 50, 100];
+const SUPPORTED_CAPTCHA_PROVIDERS: readonly CaptchaProviderType[] = [
+  "turnstile",
+  "recaptcha"
+] as const;
 
 type DraftFile = {
   name: string;
@@ -95,6 +100,19 @@ const App = () => {
   const [settingsTokenDraft, setSettingsTokenDraft] = useState(
     settings.persistentToken
   );
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaError, setCaptchaError] = useState<string | null>(null);
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
+
+  const captchaProvider = useMemo<CaptchaProviderType | null>(() => {
+    const raw = (import.meta.env.VITE_CAPTCHA_PROVIDER ?? "").trim().toLowerCase();
+    return SUPPORTED_CAPTCHA_PROVIDERS.find((item) => item === raw) ?? null;
+  }, []);
+  const captchaSiteKey = useMemo(
+    () => (import.meta.env.VITE_CAPTCHA_SITE_KEY ?? "").trim(),
+    []
+  );
+  const isCaptchaEnabled = Boolean(captchaProvider && captchaSiteKey);
 
   useEffect(() => {
     try {
@@ -228,6 +246,12 @@ const App = () => {
     if (!settings.persistentToken) {
       setAccessMode("code");
     }
+  };
+
+  const resetCaptcha = () => {
+    setCaptchaToken("");
+    setCaptchaError(null);
+    setCaptchaResetKey((value) => value + 1);
   };
 
   const handleImportClipboard = async () => {
@@ -463,6 +487,14 @@ const App = () => {
       }
     }
 
+    if (isCaptchaEnabled && !captchaToken) {
+      setToast({
+        kind: "info",
+        message: t("toast.captchaRequired")
+      });
+      return;
+    }
+
     setIsCreatingClip(true);
     try {
       const created = await createRemoteClip({
@@ -472,6 +504,8 @@ const App = () => {
         environmentId: settings.environmentId,
         accessCode: accessMode === "code" ? activeShortCode : undefined,
         accessToken: usingToken ? tokenValue : undefined,
+        captchaToken: isCaptchaEnabled ? captchaToken : undefined,
+        captchaProvider: captchaProvider ?? undefined,
         payload:
           type === "text"
             ? { text: trimmedText }
@@ -503,6 +537,9 @@ const App = () => {
       setToast({ kind: "error", message });
     } finally {
       setIsCreatingClip(false);
+      if (isCaptchaEnabled) {
+        resetCaptcha();
+      }
     }
   };
 
@@ -958,11 +995,46 @@ const App = () => {
                   </label>
                 </fieldset>
 
+                {isCaptchaEnabled ? (
+                  <div className="field">
+                    <span className="field__label">{t("form.captchaLabel")}</span>
+                    <span className="field__hint">{t("form.captchaHint")}</span>
+                    <div className="captcha-box">
+                      <Captcha
+                        provider={captchaProvider as CaptchaProviderType}
+                        siteKey={captchaSiteKey}
+                        onTokenChange={(token) => {
+                          setCaptchaToken(token ?? "");
+                          setCaptchaError(null);
+                        }}
+                        onError={(message) => {
+                          setCaptchaToken("");
+                          setCaptchaError(message);
+                          setToast({
+                            kind: "error",
+                            message
+                          });
+                        }}
+                        resetSignal={captchaResetKey}
+                        labels={{
+                          loading: t("form.captchaLoading"),
+                          error: t("form.captchaLoadFailed")
+                        }}
+                      />
+                    </div>
+                    {captchaError ? (
+                      <span className="field__hint field__hint--error">
+                        {captchaError}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 <button
                   type="button"
                   className="btn btn--secondary btn--full"
                   onClick={handleCreateRemoteClip}
-                  disabled={isCreatingClip}
+                  disabled={isCreatingClip || (isCaptchaEnabled && !captchaToken)}
                 >
                   {isCreatingClip ? t("buttons.creating") : t("buttons.create")}
                 </button>

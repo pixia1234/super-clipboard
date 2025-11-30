@@ -19,7 +19,7 @@ from .schemas import (
     TokenRegisterResponse,
 )
 from .storage import store_data_url
-from .utils import build_base_url, build_text_clip_html
+from .utils import build_base_url, build_text_clip_html, verify_captcha_token
 
 repository = ClipRepository(settings.database_path)
 api_router = APIRouter(prefix="/api")
@@ -144,6 +144,24 @@ async def create_clip(body: ClipCreateRequest, request: Request) -> ClipResponse
     environment_id_value = body.environmentId.strip()
     if not environment_id_value:
         raise HTTPException(status_code=400, detail="缺少 environmentId")
+
+    if settings.captcha_provider:
+        if not settings.captcha_secret:
+            raise HTTPException(status_code=500, detail="验证码服务未正确配置")
+        if body.captchaProvider and body.captchaProvider != settings.captcha_provider:
+            raise HTTPException(status_code=400, detail="验证码配置不匹配")
+        client_ip = _extract_client_ip(request)
+        # 避免代理导致的内网地址与浏览器求解 IP 不一致
+        if client_ip and client_ip.startswith(("127.", "10.", "192.168.", "172.")):
+            client_ip = None
+        await verify_captcha_token(
+            token=body.captchaToken,
+            provider=settings.captcha_provider,
+            secret=settings.captcha_secret,
+            remote_ip=client_ip,
+            timeout_seconds=settings.captcha_timeout_seconds,
+            bypass_token=settings.captcha_bypass_token,
+        )
 
     if body.accessToken:
         try:
@@ -325,3 +343,12 @@ async def resolve_code(access_code: str, background: BackgroundTasks):
     clip = _get_active_clip(access_code)
     clip, reached = _increment_clip_downloads(clip)
     return _dispatch_clip_response(clip, reached, background, raw=False)
+
+
+def _extract_client_ip(request: Request) -> str | None:
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        candidate = forwarded_for.split(",")[0].strip()
+        if candidate:
+            return candidate
+    return request.client.host if request.client else None

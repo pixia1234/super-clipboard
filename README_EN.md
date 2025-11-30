@@ -57,6 +57,20 @@ pytest backend/tests
 
 > For production, run `npm run build` to generate the `dist/` static assets, then start the backend (default listener `0.0.0.0:5173`). You only need to expose port 5173 to serve both the frontend and backend. If you keep the Vite dev server running, start it with `BACKEND_PORT=5174 npm run dev` so the proxy targets the new backend port.
 
+### 🔐 Enable Captcha Validation
+
+Require a captcha before creating a cloud clipboard. Google reCAPTCHA and Cloudflare Turnstile are supported. Configure both backend and frontend:
+
+- Backend env vars  
+  - `SUPER_CLIPBOARD_CAPTCHA_PROVIDER=turnstile` or `recaptcha`  
+  - `SUPER_CLIPBOARD_CAPTCHA_SECRET=<provider secret>`  
+  - Optional: `SUPER_CLIPBOARD_CAPTCHA_BYPASS_TOKEN=<testing-only bypass token>` (avoid enabling in production)
+- Frontend env vars (`./.env` or runtime flags)  
+  - `VITE_CAPTCHA_PROVIDER=turnstile` or `recaptcha`  
+  - `VITE_CAPTCHA_SITE_KEY=<site key>`  
+
+After configuration, users must complete the captcha to create a clipboard; requests without a valid token are rejected.
+
 ## Docker Deployment
 
 ```bash
