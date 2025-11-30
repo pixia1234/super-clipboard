@@ -148,8 +148,6 @@ async def create_clip(body: ClipCreateRequest, request: Request) -> ClipResponse
     if settings.captcha_provider:
         if not settings.captcha_secret:
             raise HTTPException(status_code=500, detail="验证码服务未正确配置")
-        if body.captchaProvider and body.captchaProvider != settings.captcha_provider:
-            raise HTTPException(status_code=400, detail="验证码配置不匹配")
         client_ip = _extract_client_ip(request)
         # 避免代理导致的内网地址与浏览器求解 IP 不一致
         if client_ip and client_ip.startswith(("127.", "10.", "192.168.", "172.")):
