@@ -18,6 +18,7 @@ jobs:
       packages: write
     env:
       IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/super-clipboard
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,6 +28,11 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      # 生成 UTC 时间戳作为 tag（格式：YYYYMMDDHH）
+      - name: Generate UTC timestamp tag
+        id: time
+        run: echo "timestamp=$(date -u +'%Y%m%d%H')" >> $GITHUB_OUTPUT
 
       - name: Define image metadata
         id: meta
@@ -50,7 +56,10 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ steps.meta.outputs.tags }}
+            ${{ env.IMAGE_NAME }}:${{ steps.time.outputs.timestamp }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
